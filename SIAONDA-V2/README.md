@@ -153,7 +153,7 @@ Antes de comenzar, asegúrate de tener instalado:
 #### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/jdiaz30/SIAONDA-V2.git
 cd SIAONDA-V2
 ```
 
@@ -167,7 +167,10 @@ npm install
 
 # Copiar y configurar variables de entorno
 cp .env.example .env
-# Editar .env con tu configuración de base de datos
+# Editar .env con tu configuración de base de datos:
+# - DATABASE_URL="postgresql://usuario:contraseña@localhost:5432/siaonda_v2"
+# - JWT_SECRET="tu-secret-key-segura"
+# - PORT=3000
 
 # Generar cliente de Prisma
 npx prisma generate
@@ -203,9 +206,29 @@ npm run dev
 
 El frontend estará corriendo en `http://localhost:5173`
 
+### Crear Base de Datos
+
+Antes de ejecutar las migraciones, crea la base de datos en PostgreSQL:
+
+```bash
+# Acceder a PostgreSQL
+psql -U postgres
+
+# Crear la base de datos
+CREATE DATABASE siaonda_v2;
+
+# Salir de PostgreSQL
+\q
+```
+
 ### Usuario por Defecto
 
-Después de ejecutar el seed, puedes iniciar sesión con las credenciales definidas en el seed de base de datos.
+Después de ejecutar el seed (`npm run seed`), puedes iniciar sesión con:
+
+- **Usuario**: `admin`
+- **Contraseña**: `admin123`
+
+⚠️ **IMPORTANTE**: Cambia esta contraseña después del primer inicio de sesión.
 
 ## Desarrollo
 
