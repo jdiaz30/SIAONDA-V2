@@ -220,7 +220,7 @@ const ModalCargarFirmado = ({ solicitud, onClose, onSuccess }: ModalCargarFirmad
       const formData = new FormData();
       formData.append('certificado', archivo);
 
-      await api.put(`/inspectoria/solicitudes/${solicitud.id}/firmar`, formData, {
+      await api.post(`/inspectoria/solicitudes/${solicitud.id}/subir-certificado-firmado`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -328,70 +328,34 @@ const ModalCargarFirmado = ({ solicitud, onClose, onSuccess }: ModalCargarFirmad
 const ModalFormulario = ({ solicitud, onClose }: ModalFormularioProps) => {
   if (!solicitud) return null;
 
-  const campos = solicitud.formulario?.productos?.[0]?.campos || [];
+  // Obtener datos de la empresa (NO del formulario dinámico)
+  const empresa = (solicitud as any).empresa;
 
-  // Función para convertir camelCase a texto legible
-  const formatearEtiqueta = (texto: string): string => {
-    if (texto.includes(' ') && texto[0] === texto[0].toUpperCase()) {
-      return texto;
-    }
+  if (!empresa) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+          <h2 className="text-xl font-bold text-red-900 mb-4">⚠️ Error</h2>
+          <p className="text-gray-700 mb-4">No se encontró información de la empresa para esta solicitud.</p>
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-    const etiquetas: { [key: string]: string } = {
-      tipoSolicitud: 'Tipo de Solicitud',
-      nombreEmpresa: 'Nombre de la Empresa',
-      nombreComercial: 'Nombre Comercial',
-      rnc: 'RNC',
-      categoriaIrc: 'Categoría IRC',
-      fechaInicioOperaciones: 'Fecha de Inicio de Operaciones',
-      principalesClientes: 'Principales Clientes',
-      direccion: 'Dirección',
-      provincia: 'Provincia',
-      sector: 'Sector',
-      telefono: 'Teléfono',
-      telefonoSecundario: 'Teléfono Secundario',
-      email: 'Correo Electrónico',
-      representanteLegal: 'Representante Legal',
-      cedulaRepresentante: 'Cédula del Representante',
-      tipoPersona: 'Tipo de Persona',
-      descripcionActividades: 'Descripción de Actividades',
-    };
+  // Parsear datos adicionales del comentario JSON
+  let datosComentario: any = {};
+  try {
+    datosComentario = JSON.parse(empresa.comentario || '{}');
+  } catch {
+    datosComentario = {};
+  }
 
-    if (etiquetas[texto]) {
-      return etiquetas[texto];
-    }
-
-    return texto
-      .replace(/([A-Z])/g, ' $1')
-      .replace(/^./, (str) => str.toUpperCase())
-      .trim();
-  };
-
-  // Función para determinar la categoría de un campo
-  const obtenerCategoria = (nombreCampo: string): string => {
-    const campo = nombreCampo.toLowerCase();
-
-    if (campo.includes('presidente') || campo.includes('vicepresidente') ||
-        campo.includes('secretario') || campo.includes('tesorero') ||
-        campo.includes('administrador') || campo.includes('consejo')) {
-      return 'Miembros del Consejo';
-    }
-
-    if (campo.includes('representante') || campo.includes('cedula') &&
-        (campo.includes('representante') || campo === 'cedularepresentante')) {
-      return 'Representante Legal';
-    }
-
-    if (campo.includes('direccion') || campo.includes('provincia') ||
-        campo.includes('sector') || campo.includes('domicilio')) {
-      return 'Ubicación';
-    }
-
-    if (campo.includes('telefono') || campo.includes('celular') || campo.includes('email')) {
-      return 'Información de Contacto';
-    }
-
-    return 'Información General';
-  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -454,74 +418,185 @@ const ModalFormulario = ({ solicitud, onClose }: ModalFormularioProps) => {
             </div>
           </div>
 
-          {/* Campos del Formulario */}
+          {/* Datos de la Empresa */}
           <div className="space-y-4">
             <h3 className="font-semibold text-gray-900 text-lg border-b-2 border-gray-200 pb-2">
-              Datos del Formulario IRC
+              Información de la Empresa IRC
             </h3>
 
-            {campos.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-lg">📄</p>
-                <p className="mt-2">No hay campos disponibles en el formulario</p>
+            {/* Información General */}
+            <div className="bg-gradient-to-r from-blue-50 to-white rounded-lg p-4 border border-blue-200">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500 flex items-center gap-2">
+                <span className="text-blue-600">🏢</span>
+                Información General
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Nombre de la Empresa
+                  </label>
+                  <div className="text-sm text-gray-900 font-medium">{empresa.nombreEmpresa || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Nombre Comercial
+                  </label>
+                  <div className="text-sm text-gray-900 font-medium">{empresa.nombreComercial || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    RNC
+                  </label>
+                  <div className="text-sm text-gray-900 font-medium">{empresa.rnc || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Tipo de Persona
+                  </label>
+                  <div className="text-sm text-gray-900 font-medium">
+                    {empresa.tipoPersona === 'MORAL' ? 'Persona Moral' : 'Persona Física'}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200 md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Descripción de Actividades
+                  </label>
+                  <div className="text-sm text-gray-900">{empresa.descripcionActividades || 'N/A'}</div>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-6">
-                {(() => {
-                  // Agrupar campos por categoría
-                  const camposPorCategoria: { [key: string]: typeof campos } = {};
+            </div>
 
-                  campos.forEach((campo) => {
-                    const categoria = obtenerCategoria(campo.campo.campo);
-                    if (!camposPorCategoria[categoria]) {
-                      camposPorCategoria[categoria] = [];
-                    }
-                    camposPorCategoria[categoria].push(campo);
-                  });
+            {/* Ubicación y Contacto */}
+            <div className="bg-gradient-to-r from-green-50 to-white rounded-lg p-4 border border-green-200">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-green-500 flex items-center gap-2">
+                <span className="text-green-600">📍</span>
+                Ubicación y Contacto
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-lg p-3 border border-gray-200 md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Dirección
+                  </label>
+                  <div className="text-sm text-gray-900">{empresa.direccion || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Provincia
+                  </label>
+                  <div className="text-sm text-gray-900">{empresa.provincia?.nombre || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Sector
+                  </label>
+                  <div className="text-sm text-gray-900">{datosComentario.sector || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Teléfono Principal
+                  </label>
+                  <div className="text-sm text-gray-900">{empresa.telefono || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Teléfono Secundario
+                  </label>
+                  <div className="text-sm text-gray-900">{datosComentario.telefonoSecundario || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Correo Electrónico
+                  </label>
+                  <div className="text-sm text-gray-900">{empresa.email || 'N/A'}</div>
+                </div>
+                <div className="bg-white rounded-lg p-3 border border-gray-200">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                    Página Web
+                  </label>
+                  <div className="text-sm text-gray-900">{empresa.paginaWeb || 'N/A'}</div>
+                </div>
+              </div>
+            </div>
 
-                  const ordenCategorias = [
-                    'Información General',
-                    'Ubicación',
-                    'Información de Contacto',
-                    'Representante Legal',
-                    'Miembros del Consejo',
-                  ];
+            {/* Propietario (si es Persona Física) */}
+            {empresa.tipoPersona === 'FISICA' && (
+              <div className="bg-gradient-to-r from-purple-50 to-white rounded-lg p-4 border border-purple-200">
+                <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-purple-500 flex items-center gap-2">
+                  <span className="text-purple-600">👤</span>
+                  Datos del Propietario
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-3 border border-gray-200">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                      Nombre Completo
+                    </label>
+                    <div className="text-sm text-gray-900">{empresa.nombrePropietario || 'N/A'}</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3 border border-gray-200">
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                      Cédula
+                    </label>
+                    <div className="text-sm text-gray-900">{empresa.cedulaPropietario || 'N/A'}</div>
+                  </div>
+                </div>
+              </div>
+            )}
 
-                  return ordenCategorias.map((categoria) => {
-                    const camposCategoria = camposPorCategoria[categoria];
-                    if (!camposCategoria || camposCategoria.length === 0) return null;
-
-                    return (
-                      <div key={categoria} className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
-                        <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500 flex items-center gap-2">
-                          <span className="text-blue-600">📋</span>
-                          {categoria}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {camposCategoria.map((campo) => {
-                            const etiqueta = formatearEtiqueta(campo.campo.etiqueta || campo.campo.campo);
-                            const valor = campo.valor && campo.valor.trim() !== '' ? campo.valor : null;
-
-                            return (
-                              <div key={campo.id} className="bg-white rounded-lg p-3 border border-gray-200">
-                                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                                  {etiqueta}
-                                </label>
-                                <div className="text-sm text-gray-900">
-                                  {valor ? (
-                                    <span className="font-medium">{valor}</span>
-                                  ) : (
-                                    <span className="text-gray-400 italic text-xs">Sin especificar</span>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
+            {/* Consejo de Administración (si es Persona Moral) */}
+            {empresa.tipoPersona === 'MORAL' && (
+              <div className="bg-gradient-to-r from-orange-50 to-white rounded-lg p-4 border border-orange-200">
+                <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-orange-500 flex items-center gap-2">
+                  <span className="text-orange-600">👥</span>
+                  Consejo de Administración
+                </h4>
+                {empresa.consejoAdministracion && empresa.consejoAdministracion.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-3">
+                    {empresa.consejoAdministracion.map((miembro: any, index: number) => (
+                      <div key={miembro.id} className="bg-white rounded-lg p-3 border border-gray-200">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-shrink-0 w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                            <span className="text-orange-600 font-bold text-sm">{index + 1}</span>
+                          </div>
+                          <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-2">
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Nombre</span>
+                              <p className="text-sm font-medium text-gray-900">{miembro.nombre}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Cargo</span>
+                              <p className="text-sm font-medium text-gray-900">{miembro.cargo}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500 uppercase">Cédula</span>
+                              <p className="text-sm font-medium text-gray-900">{miembro.cedula}</p>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    );
-                  });
-                })()}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-500 bg-white rounded-lg border border-gray-200">
+                    <p className="text-sm italic">No se han registrado miembros del consejo</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Principales Clientes */}
+            {empresa.principalesClientes && empresa.principalesClientes.length > 0 && (
+              <div className="bg-gradient-to-r from-indigo-50 to-white rounded-lg p-4 border border-indigo-200">
+                <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-indigo-500 flex items-center gap-2">
+                  <span className="text-indigo-600">🤝</span>
+                  Principales Clientes
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {empresa.principalesClientes.map((cliente: any) => (
+                    <div key={cliente.id} className="bg-white rounded-lg p-3 border border-gray-200">
+                      <div className="text-sm text-gray-900 font-medium">{cliente.nombreCliente}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -557,13 +632,13 @@ export default function CertificadosPendientesPage() {
   const cargarSolicitudes = async () => {
     try {
       setLoading(true);
-      // Cargar solicitudes en estado ASENTADA (4) y PENDIENTE_FIRMA (5)
+      // Cargar solicitudes en estado ASENTADA (5) y CERTIFICADO_GENERADO (6)
       // Para mantener trazabilidad y poder descargar certificados
       const params: any = {
         page,
         limit: 20,
         search,
-        estadoId: '4,5' // ASENTADA y PENDIENTE_FIRMA
+        estadoId: '5,6' // ASENTADA y CERTIFICADO_GENERADO
       };
 
       const response = await api.get('/inspectoria/solicitudes', { params });
@@ -728,7 +803,7 @@ export default function CertificadosPendientesPage() {
                             📄 Ver Formulario
                           </button>
 
-                          {solicitud.estado.id === 4 ? (
+                          {solicitud.estado.id === 5 ? (
                             // ASENTADA - Mostrar botones de generar y devolver
                             <div className="flex gap-2">
                               <button
@@ -748,7 +823,7 @@ export default function CertificadosPendientesPage() {
                               </button>
                             </div>
                           ) : (
-                            // PENDIENTE_FIRMA - Certificado ya generado
+                            // CERTIFICADO_GENERADO o posterior - Certificado ya generado
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleVerCertificado(solicitud)}

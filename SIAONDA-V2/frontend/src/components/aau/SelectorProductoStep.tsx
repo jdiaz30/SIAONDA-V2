@@ -11,7 +11,7 @@ interface Producto {
 }
 
 interface Props {
-  onProductoSeleccionado: (producto: Producto) => void;
+  onProductoSeleccionado: (producto: Producto, esProduccion: boolean) => void;
   onVolver: () => void;
 }
 
@@ -70,7 +70,9 @@ const SelectorProductoStep = ({ onProductoSeleccionado, onVolver }: Props) => {
       alert('Debe seleccionar un tipo de obra');
       return;
     }
-    onProductoSeleccionado(productoSeleccionado);
+    // Detectar si es una producción (código termina en -P)
+    const esProduccion = productoSeleccionado.codigo.endsWith('-P');
+    onProductoSeleccionado(productoSeleccionado, esProduccion);
   };
 
   if (loading) {
@@ -148,6 +150,7 @@ const SelectorProductoStep = ({ onProductoSeleccionado, onVolver }: Props) => {
               <div className="divide-y divide-gray-200">
                 {items.map((producto) => {
                   const isSelected = productoSeleccionado?.id === producto.id;
+                  const esProduccion = producto.codigo.endsWith('-P');
                   return (
                     <button
                       key={producto.id}
@@ -160,11 +163,16 @@ const SelectorProductoStep = ({ onProductoSeleccionado, onVolver }: Props) => {
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-mono">
                               {producto.codigo}
                             </span>
                             <h4 className="font-semibold text-gray-900">{producto.nombre}</h4>
+                            {esProduccion && (
+                              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">
+                                PRODUCCIÓN (6-15 obras)
+                              </span>
+                            )}
                             {isSelected && (
                               <div className="flex items-center gap-1 text-blue-600">
                                 <FiCheck className="w-5 h-5" />
@@ -177,7 +185,9 @@ const SelectorProductoStep = ({ onProductoSeleccionado, onVolver }: Props) => {
                           <p className="text-2xl font-bold text-gray-900">
                             RD$ {producto.precio.toLocaleString('es-DO')}
                           </p>
-                          <p className="text-sm text-gray-500">Precio oficial ONDA</p>
+                          <p className="text-sm text-gray-500">
+                            {esProduccion ? 'Precio por producción completa' : 'Precio oficial ONDA'}
+                          </p>
                         </div>
                       </div>
                     </button>

@@ -19,7 +19,7 @@ export default function ActaOficioFormPage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
-    numeroActa: '',
+    numeroActa: '', // Opcional - se genera automáticamente si está vacío
     inspectorId: '',
     empresaRnc: '',
     empresaNombre: '',
@@ -129,16 +129,18 @@ export default function ActaOficioFormPage() {
             {/* Número de Acta */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Número de Acta <span className="text-red-500">*</span>
+                Número de Acta (Opcional)
               </label>
               <input
                 type="text"
                 value={formData.numeroActa}
                 onChange={(e) => setFormData({ ...formData, numeroActa: e.target.value })}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                placeholder="ACTA-2025-0001"
-                required
+                placeholder="Ej: 001-25 (se genera automáticamente si se deja vacío)"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Formato: XXX-XX (3 dígitos + 2 dígitos de año). Se genera automáticamente si está vacío.
+              </p>
             </div>
 
             {/* Inspector */}

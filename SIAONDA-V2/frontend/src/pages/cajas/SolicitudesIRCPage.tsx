@@ -49,11 +49,13 @@ const ModalCobrar = ({ solicitud, onClose, onSuccess }: ModalCobrarProps) => {
   const [observaciones, setObservaciones] = useState('');
   const [requiereNCF, setRequiereNCF] = useState(false);
   const [rnc, setRnc] = useState('');
+  const [anosVigencia, setAnosVigencia] = useState(1);
   const [loading, setLoading] = useState(false);
 
   if (!solicitud) return null;
 
-  const total = Number(solicitud.categoriaIrc.precio);
+  const precioAnual = Number(solicitud.categoriaIrc.precio);
+  const total = precioAnual * anosVigencia;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +72,8 @@ const ModalCobrar = ({ solicitud, onClose, onSuccess }: ModalCobrarProps) => {
         referencia: referencia || null,
         observaciones: observaciones || null,
         requiereNCF,
-        rnc: requiereNCF ? rnc : null
+        rnc: requiereNCF ? rnc : null,
+        anosVigencia: anosVigencia
       });
 
       const facturaId = response.data.factura.id;
@@ -138,12 +141,48 @@ const ModalCobrar = ({ solicitud, onClose, onSuccess }: ModalCobrarProps) => {
             </div>
           </div>
 
+          {/* Años de Vigencia */}
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+            <label className="block text-sm font-medium text-purple-900 mb-2">
+              Años de Vigencia *
+            </label>
+            <p className="text-xs text-purple-700 mb-3">
+              Selecciona cuántos años desea pagar el cliente (precio: RD$ {precioAnual.toLocaleString('es-DO', { minimumFractionDigits: 2 })} por año)
+            </p>
+            <div className="grid grid-cols-5 gap-2">
+              {[1, 2, 3, 4, 5].map((anos) => (
+                <button
+                  key={anos}
+                  type="button"
+                  onClick={() => setAnosVigencia(anos)}
+                  className={`px-4 py-3 rounded-lg font-semibold transition-all ${
+                    anosVigencia === anos
+                      ? 'bg-purple-600 text-white shadow-lg scale-105'
+                      : 'bg-white text-purple-600 border-2 border-purple-300 hover:bg-purple-100'
+                  }`}
+                >
+                  {anos} {anos === 1 ? 'año' : 'años'}
+                </button>
+              ))}
+            </div>
+            {anosVigencia > 1 && (
+              <p className="text-sm text-purple-700 mt-2 font-medium">
+                ✓ Se cobrarán {anosVigencia} años de vigencia
+              </p>
+            )}
+          </div>
+
           {/* Monto a Pagar */}
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
             <div className="flex justify-between items-center">
               <span className="font-bold text-green-900 text-lg">TOTAL A PAGAR:</span>
               <span className="font-bold text-green-900 text-2xl">RD$ {total.toLocaleString('es-DO', { minimumFractionDigits: 2 })}</span>
             </div>
+            {anosVigencia > 1 && (
+              <p className="text-xs text-green-700 mt-2">
+                {precioAnual.toLocaleString('es-DO', { minimumFractionDigits: 2 })} × {anosVigencia} años
+              </p>
+            )}
           </div>
 
           {/* Formulario de Pago */}

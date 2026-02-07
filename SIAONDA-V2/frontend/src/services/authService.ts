@@ -14,8 +14,11 @@ export interface LoginResponse {
     nombrecompleto: string;
     codigo: string;
     tipo: string;
+    tipoId: number;
     correo: string | null;
   };
+  permisos: string[];
+  requiereCambioContrasena: boolean;
 }
 
 export const authService = {

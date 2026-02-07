@@ -27,9 +27,10 @@ model Usuario {
   supervisorId       Int?      @map("supervisor_id")
 
   // Seguridad
-  token              String?   @db.VarChar(255)
-  tokenExpiracion    DateTime? @map("token_expiracion")
-  intentosFallidos   Int       @default(0) @map("intentos_fallidos")
+  token                      String?   @db.VarChar(255)
+  tokenExpiracion            DateTime? @map("token_expiracion")
+  intentosFallidos           Int       @default(0) @map("intentos_fallidos")
+  requiereCambioContrasena   Boolean   @default(false) @map("requiere_cambio_contrasena")
 
   // Auditoría
   creadoEn           DateTime  @default(now()) @map("creado_en")
@@ -41,10 +42,11 @@ model Usuario {
   supervisor         Usuario?        @relation("Supervisor", fields: [supervisorId], references: [id])
   subordinados       Usuario[]       @relation("Supervisor")
 
-  formularios        Formulario[]
-  certificados       Certificado[]
-  cajas              Caja[]
-  pagos              Pago[]
+  formularios              Formulario[]
+  formulariosHistorial     FormularioHistorial[]  @relation("HistorialFormularios")
+  certificados             Certificado[]
+  cajas                    Caja[]
+  pagos                    Pago[]
 
   // Inspectoría - Empresas
   empresasCreadas                 EmpresaInspeccionada[]
@@ -80,6 +82,12 @@ model Usuario {
   denunciasRecibidas              Denuncia[]                        @relation("DenunciasRecibidas")
   casosJuridicosRecibidos         CasoJuridico[]                    @relation("CasosJuridicosRecibidos")
 
+  // Registro de Obras
+  usuarioAsentamientos            Registro[]                        @relation("UsuarioAsentamientos")
+
+  // Historial de Entregas
+  entregasCertificados            HistorialEntrega[]                @relation("EntregasCertificados")
+
   @@map("usuarios")
   @@index([token])
   @@index([correo])
@@ -91,6 +99,7 @@ model UsuarioTipo {
   descripcion String?   @db.Text
 
   usuarios    Usuario[]
+  permisos    RolPermiso[]
 
   @@map("usuarios_tipos")
 }
@@ -103,6 +112,43 @@ model UsuarioEstado {
   usuarios    Usuario[]
 
   @@map("usuarios_estados")
+}
+
+// ============================================
+// SISTEMA DE PERMISOS
+// ============================================
+
+model Permiso {
+  id          Int      @id @default(autoincrement())
+  codigo      String   @unique @db.VarChar(100)  // Ej: "atu.formularios.create"
+  nombre      String   @db.VarChar(200)
+  modulo      String   @db.VarChar(50)           // ATU, REGISTRO, CAJAS, etc.
+  descripcion String?  @db.Text
+  activo      Boolean  @default(true)
+
+  roles       RolPermiso[]
+
+  creadoEn    DateTime @default(now()) @map("creado_en")
+
+  @@map("permisos")
+  @@index([modulo])
+  @@index([activo])
+}
+
+model RolPermiso {
+  id         Int      @id @default(autoincrement())
+  rolId      Int      @map("rol_id")
+  permisoId  Int      @map("permiso_id")
+
+  rol        UsuarioTipo @relation(fields: [rolId], references: [id], onDelete: Cascade)
+  permiso    Permiso     @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  creadoEn   DateTime @default(now()) @map("creado_en")
+
+  @@unique([rolId, permisoId])
+  @@map("roles_permisos")
+  @@index([rolId])
+  @@index([permisoId])
 }
 
 // ============================================
@@ -219,6 +265,11 @@ model Formulario {
   // Totales
   montoTotal            Decimal   @default(0) @db.Decimal(10, 2) @map("monto_total")
 
+  // Producciones (agrupación de obras)
+  esProduccion          Boolean   @default(false) @map("es_produccion")
+  produccionPadreId     Int?      @map("produccion_padre_id")
+  tituloProduccion      String?   @db.VarChar(500) @map("titulo_produccion")
+
   creadoEn              DateTime  @default(now()) @map("creado_en")
   actualizadoEn         DateTime  @updatedAt @map("actualizado_en")
 
@@ -226,16 +277,22 @@ model Formulario {
   usuario               Usuario                      @relation(fields: [usuarioId], references: [id])
   factura               Factura?                     @relation(fields: [facturaId], references: [id])
   solicitudIrc          SolicitudRegistroInspeccion? @relation(fields: [solicitudIrcId], references: [id])
+  produccionPadre       Formulario?                  @relation("ProduccionHijos", fields: [produccionPadreId], references: [id], onDelete: Cascade)
 
   productos             FormularioProducto[]
   clientes              FormularioCliente[]
   certificados          Certificado[]
   archivos              FormularioArchivo[]
+  historial             FormularioHistorial[]
+  historialesEntrega    HistorialEntrega[]
+  obrasHijas            Formulario[]                 @relation("ProduccionHijos")
 
   @@map("formularios")
   @@index([codigo])
   @@index([fecha])
   @@index([estadoId])
+  @@index([esProduccion], map: "formularios_es_produccion_idx")
+  @@index([produccionPadreId], map: "formularios_produccion_padre_id_idx")
 }
 
 model FormularioEstado {
@@ -243,7 +300,9 @@ model FormularioEstado {
   nombre      String      @unique @db.VarChar(50) // Pendiente, Recibido, En Proceso, Asentado, Certificado
   descripcion String?     @db.Text
 
-  formularios Formulario[]
+  formularios                Formulario[]
+  historialesEstadoAnterior  FormularioHistorial[] @relation("EstadoAnterior")
+  historialesEstadoNuevo     FormularioHistorial[] @relation("EstadoNuevo")
 
   @@map("formularios_estados")
 }
@@ -262,6 +321,7 @@ model FormularioProducto {
   campos          FormularioProductoCampo[]
   certificados    Certificado[]
   archivos        FormularioArchivo[]
+  registros       Registro[]
 
   @@map("formularios_productos")
   @@index([formularioId])
@@ -348,6 +408,26 @@ model FormularioArchivo {
   @@map("formularios_archivos")
   @@index([formularioId])
   @@index([formularioProductoId])
+}
+
+model FormularioHistorial {
+  id                 Int       @id @default(autoincrement())
+  formularioId       Int       @map("formulario_id")
+  estadoAnteriorId   Int?      @map("estado_anterior_id")
+  estadoNuevoId      Int       @map("estado_nuevo_id")
+  usuarioId          Int       @map("usuario_id")
+  accion             String    @db.VarChar(50) // CREADO, DEVUELTO, APROBADO, ASENTADO, etc.
+  mensaje            String?   @db.Text // Mensaje de devolución o comentario
+  fecha              DateTime  @default(now())
+
+  formulario         Formulario         @relation(fields: [formularioId], references: [id], onDelete: Cascade)
+  estadoAnterior     FormularioEstado?  @relation("EstadoAnterior", fields: [estadoAnteriorId], references: [id])
+  estadoNuevo        FormularioEstado   @relation("EstadoNuevo", fields: [estadoNuevoId], references: [id])
+  usuario            Usuario            @relation("HistorialFormularios", fields: [usuarioId], references: [id])
+
+  @@map("formularios_historial")
+  @@index([formularioId])
+  @@index([fecha])
 }
 
 // ============================================
@@ -585,6 +665,10 @@ model Caja {
   diferencia      Decimal?  @db.Decimal(10, 2)
   observaciones   String?   @db.Text
 
+  // Periodo de gracia / Caja gratuita (para eventos, ferias, etc.)
+  esGratuita      Boolean   @default(false) @map("es_gratuita")
+  motivoGratuito  String?   @db.VarChar(500) @map("motivo_gratuito") // Ej: "Feria del Libro 2026"
+
   creadoEn        DateTime  @default(now()) @map("creado_en")
 
   estado          CajaEstado  @relation(fields: [estadoId], references: [id])
@@ -595,6 +679,7 @@ model Caja {
   facturas        Factura[]
 
   @@map("cajas")
+  @@index([esGratuita])
 }
 
 model CajaEstado {
@@ -969,10 +1054,19 @@ model SolicitudRegistroInspeccion {
   entregadoPor          Usuario?  @relation("SolicitudesEntregadas", fields: [entregadoPorId], references: [id])
   fechaEntrega          DateTime? @map("fecha_entrega")
 
+  // Vigencia del registro (múltiples años)
+  anosVigencia          Int       @default(1) @map("anos_vigencia") // Cuántos años se pagaron
+  fechaVencimiento      DateTime? @map("fecha_vencimiento") // Fecha real de vencimiento
+
+  // Campos de devolución
+  mensajeDevolucion     String?   @db.Text @map("mensaje_devolucion")
+  fechaDevolucion       DateTime? @map("fecha_devolucion")
+
   observaciones         String?   @db.Text
 
   // Vinculación con Formulario (AuU)
   formulario            Formulario?
+  historialesEntrega    HistorialEntrega[]
 
   creadoEn              DateTime  @default(now()) @map("creado_en")
   actualizadoEn         DateTime  @updatedAt @map("actualizado_en")
@@ -1469,4 +1563,127 @@ model EstadoCasoJuridico {
   casos       CasoJuridico[]
   
   @@map("estados_caso_juridico")
+}
+
+// ============================================
+// MÓDULO DE REGISTRO DE OBRAS
+// ============================================
+
+model Registro {
+  id                    Int       @id @default(autoincrement())
+  numeroRegistro        String    @unique @db.VarChar(50) // Formato: 00000001/12/2025
+  
+  // Relación con el producto/obra del formulario
+  formularioProductoId  Int       @map("formulario_producto_id")
+  formularioProducto    FormularioProducto @relation(fields: [formularioProductoId], references: [id])
+  
+  // Información del registro
+  fechaAsentamiento     DateTime? @map("fecha_asentamiento") // NULL hasta que se asiente
+  tipoObra              String    @db.VarChar(100) @map("tipo_obra") // Musical, Literaria, etc.
+  tituloObra            String    @db.VarChar(500) @map("titulo_obra")
+  libroNumero           Int?      @map("libro_numero") // Número de libro físico donde se asienta
+  hojaNumero            Int?      @map("hoja_numero") // Número de hoja en el libro
+
+  // Certificados
+  certificadoGenerado   String?   @db.VarChar(500) @map("certificado_generado") // Path al PDF generado
+  certificadoFirmado    String?   @db.VarChar(500) @map("certificado_firmado")  // Path al PDF firmado
+  urlFirmaGob           String?   @db.VarChar(500) @map("url_firma_gob")        // URL del proceso de Firma Gob
+  
+  // Estados y seguimiento
+  estadoId              Int       @map("estado_id")
+  estado                RegistroEstado @relation(fields: [estadoId], references: [id])
+  
+  // Usuario que asentó
+  usuarioAsentamientoId Int       @map("usuario_asentamiento_id")
+  usuarioAsentamiento   Usuario   @relation("UsuarioAsentamientos", fields: [usuarioAsentamientoId], references: [id])
+  
+  // Fechas de cambios de estado
+  fechaGeneracionCert   DateTime? @map("fecha_generacion_cert")
+  fechaEnvioFirma       DateTime? @map("fecha_envio_firma")
+  fechaFirmaCert        DateTime? @map("fecha_firma_cert")
+  fechaEnviadoAAU       DateTime? @map("fecha_enviado_aau")
+  fechaEntregado        DateTime? @map("fecha_entregado")
+  
+  // Observaciones
+  observaciones         String?   @db.Text
+  
+  // Auditoría
+  creadoEn              DateTime  @default(now()) @map("creado_en")
+  actualizadoEn         DateTime  @updatedAt @map("actualizado_en")
+  
+  @@map("registros")
+  @@index([numeroRegistro])
+  @@index([formularioProductoId])
+  @@index([estadoId])
+  @@index([fechaAsentamiento])
+}
+
+model RegistroEstado {
+  id          Int       @id @default(autoincrement())
+  nombre      String    @unique @db.VarChar(50)
+  // PENDIENTE_ASENTAMIENTO, ASENTADO, CERTIFICADO_GENERADO, ENVIADO_FIRMA, 
+  // CERTIFICADO_FIRMADO, LISTO_PARA_ENTREGA, ENTREGADO
+  descripcion String?   @db.Text
+  orden       Int       @default(0)
+  
+  registros   Registro[]
+  
+  @@map("registros_estados")
+}
+
+model SecuenciaRegistro {
+  id          Int       @id @default(autoincrement())
+  anio        Int       @unique
+  secuencia   Int       @default(0)
+
+  creadoEn    DateTime  @default(now()) @map("creado_en")
+  actualizadoEn DateTime @updatedAt @map("actualizado_en")
+
+  @@map("secuencias_registro")
+}
+
+// ============================================
+// HISTORIAL DE ENTREGAS DE CERTIFICADOS
+// ============================================
+
+model HistorialEntrega {
+  id                  Int       @id @default(autoincrement())
+  tipo                String    @db.VarChar(10) // 'OBRA' o 'IRC'
+
+  // Relaciones opcionales (uno u otro será null)
+  formularioId        Int?      @map("formulario_id")
+  formulario          Formulario? @relation(fields: [formularioId], references: [id])
+
+  solicitudIrcId      Int?      @map("solicitud_irc_id")
+  solicitudIrc        SolicitudRegistroInspeccion? @relation(fields: [solicitudIrcId], references: [id])
+
+  // Datos del certificado
+  certificadoCodigo   String    @db.VarChar(50) @map("certificado_codigo")
+  numeroRegistro      String?   @db.VarChar(50) @map("numero_registro")
+
+  // Datos del cliente/empresa
+  clienteNombre       String    @db.VarChar(200) @map("cliente_nombre")
+  clienteTelefono     String?   @db.VarChar(20) @map("cliente_telefono")
+  categoria           String    @db.VarChar(255)
+
+  // Datos de entrega
+  usuarioEntregaId    Int       @map("usuario_entrega_id")
+  usuarioEntrega      Usuario   @relation("EntregasCertificados", fields: [usuarioEntregaId], references: [id])
+  fechaEntrega        DateTime  @default(now()) @map("fecha_entrega")
+
+  // Datos del receptor
+  nombreReceptor      String?   @db.VarChar(200) @map("nombre_receptor")
+  cedulaReceptor      String?   @db.VarChar(20) @map("cedula_receptor")
+  esRepresentante     Boolean?  @default(false) @map("es_representante")
+  rutaDocumentoLegal  String?   @db.VarChar(500) @map("ruta_documento_legal")
+
+  // Observaciones
+  observaciones       String?   @db.Text
+
+  @@map("historial_entregas")
+  @@index([tipo])
+  @@index([fechaEntrega])
+  @@index([usuarioEntregaId])
+  @@index([formularioId])
+  @@index([solicitudIrcId])
 }

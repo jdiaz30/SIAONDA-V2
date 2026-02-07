@@ -10,7 +10,7 @@ const crearSecuenciaSchema = z.object({
   serie: z.string().length(1).default('E'), // E para electrónico
   numeroInicial: z.number().int().positive(),
   numeroFinal: z.number().int().positive(),
-  fechaVencimiento: z.string().datetime(),
+  fechaVencimiento: z.string(), // Acepta cualquier formato de fecha válido
   observaciones: z.string().optional()
 });
 
@@ -37,7 +37,15 @@ export const getSecuencias = asyncHandler(async (req: Request, res: Response) =>
     ]
   });
 
-  res.json(secuencias);
+  // Convertir BigInt a string para JSON
+  const secuenciasJSON = secuencias.map(s => ({
+    ...s,
+    numeroInicial: s.numeroInicial.toString(),
+    numeroFinal: s.numeroFinal.toString(),
+    numeroActual: s.numeroActual.toString()
+  }));
+
+  res.json(secuenciasJSON);
 });
 
 // GET /api/ncf/:id - Obtener una secuencia por ID
@@ -95,17 +103,25 @@ export const crearSecuencia = asyncHandler(async (req: AuthRequest, res: Respons
     data: {
       tipoComprobante: data.tipoComprobante,
       serie: data.serie,
-      numeroInicial: data.numeroInicial,
-      numeroFinal: data.numeroFinal,
-      numeroActual: data.numeroInicial - 1, // Empieza antes del primer número
+      numeroInicial: BigInt(data.numeroInicial),
+      numeroFinal: BigInt(data.numeroFinal),
+      numeroActual: BigInt(data.numeroInicial - 1), // Empieza antes del primer número
       fechaVencimiento: new Date(data.fechaVencimiento),
       observaciones: data.observaciones || null
     }
   });
 
+  // Convertir BigInt a string para JSON
+  const secuenciaJSON = {
+    ...secuencia,
+    numeroInicial: secuencia.numeroInicial.toString(),
+    numeroFinal: secuencia.numeroFinal.toString(),
+    numeroActual: secuencia.numeroActual.toString()
+  };
+
   res.status(201).json({
     message: 'Secuencia NCF creada exitosamente',
-    secuencia
+    secuencia: secuenciaJSON
   });
 });
 
@@ -188,15 +204,17 @@ export const getEstadisticas = asyncHandler(async (req: Request, res: Response) 
     const porcentajeUsado = ((usados / total) * 100).toFixed(2);
 
     return {
-      id: seq.id,
       tipoComprobante: seq.tipoComprobante,
       serie: seq.serie,
-      total,
-      usados,
+      numeroInicial: seq.numeroInicial.toString(),
+      numeroFinal: seq.numeroFinal.toString(),
+      numeroActual: seq.numeroActual.toString(),
       disponibles,
-      porcentajeUsado,
-      fechaVencimiento: seq.fechaVencimiento,
-      estado: disponibles === 0 ? 'Agotada' : disponibles < 100 ? 'Crítica' : 'Disponible'
+      utilizados: usados,
+      porcentajeUtilizado: parseFloat(porcentajeUsado),
+      fechaVencimiento: seq.fechaVencimiento.toISOString(),
+      diasRestantes: Math.ceil((seq.fechaVencimiento.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+      activo: seq.activo
     };
   });
 

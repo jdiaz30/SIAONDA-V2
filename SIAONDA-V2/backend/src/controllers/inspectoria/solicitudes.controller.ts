@@ -116,12 +116,12 @@ export const crearSolicitud = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * PASO 2 - INSPECTORÍA VALIDACIÓN: Validar documentos
+ * PASO 2 - AuU GENERA FACTURA: Generar factura para la solicitud
+ * (No hay validación previa, se genera automáticamente al crear la solicitud)
  */
-export const validarSolicitud = async (req: AuthRequest, res: Response) => {
+export const generarFactura = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { aprobada, motivo } = req.body;
     const usuarioId = req.usuario?.id || 1;
 
     const solicitud = await prisma.solicitudRegistroInspeccion.findUnique({
@@ -143,111 +143,52 @@ export const validarSolicitud = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (aprobada) {
-      // 1. Buscar o crear empresa en EmpresaInspeccionada
-      let empresaId = solicitud.empresaId;
-
-      if (!empresaId) {
-        // Buscar si ya existe una empresa con ese RNC
-        const empresaExistente = await prisma.empresaInspeccionada.findFirst({
-          where: { rnc: solicitud.rnc }
-        });
-
-        if (empresaExistente) {
-          // Si existe, asociarla a la solicitud
-          empresaId = empresaExistente.id;
-        } else {
-          // Si no existe, crear nueva empresa
-          const fechaVenc = new Date();
-          fechaVenc.setFullYear(fechaVenc.getFullYear() + 1);
-
-          const nuevaEmpresa = await prisma.empresaInspeccionada.create({
-            data: {
-              nombreEmpresa: solicitud.nombreEmpresa || '',
-              nombreComercial: solicitud.nombreComercial,
-              rnc: solicitud.rnc,
-              direccion: 'Pendiente de actualizar',
-              telefono: 'N/A',
-              email: 'pendiente@onda.gov.do',
-              categoriaIrcId: solicitud.categoriaIrcId,
-              tipoPersona: 'MORAL',
-              descripcionActividades: 'Importador/Distribuidor de obras protegidas',
-              registrado: false, // Se marcará como true al asentar
-              fechaRegistro: new Date(),
-              fechaVencimiento: fechaVenc,
-              statusId: 1, // ACTIVA
-              creadoPorId: usuarioId
-            }
-          });
-          empresaId = nuevaEmpresa.id;
-        }
-      }
-
-      // 2. VALIDADA - Generar factura automáticamente
-      const precio = Number(solicitud.categoriaIrc.precio);
-
-      // Crear factura
-      const factura = await prisma.factura.create({
-        data: {
-          codigo: `FACT-INSP-${Date.now()}`, // TODO: Mejorar generación de código
-          clienteId: 1, // TODO: Obtener del cliente real
-          estadoId: 1, // Abierta
-          subtotal: precio,
-          itbis: precio * 0.18, // 18% ITBIS
-          total: precio * 1.18,
-          metodoPago: null
-        }
-      });
-
-      // 3. Actualizar solicitud con empresa y factura
-      const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
-        where: { id: Number(id) },
-        data: {
-          estadoId: 2, // VALIDADA
-          validadoPorId: usuarioId,
-          fechaValidacion: new Date(),
-          facturaId: factura.id,
-          empresaId: empresaId // Asociar empresa
-        },
-        include: {
-          estado: true,
-          factura: true,
-          categoriaIrc: true,
-          empresa: true
-        }
-      });
-
-      return res.json({
-        success: true,
-        message: 'Solicitud validada y factura generada',
-        data: solicitudActualizada
-      });
-    } else {
-      // RECHAZADA
-      const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
-        where: { id: Number(id) },
-        data: {
-          estadoId: 8, // RECHAZADA
-          validadoPorId: usuarioId,
-          fechaValidacion: new Date(),
-          observaciones: motivo
-        },
-        include: {
-          estado: true
-        }
-      });
-
-      return res.json({
-        success: true,
-        message: 'Solicitud rechazada',
-        data: solicitudActualizada
+    if (solicitud.facturaId) {
+      return res.status(400).json({
+        success: false,
+        message: 'La solicitud ya tiene una factura generada'
       });
     }
+
+    // Generar factura automáticamente
+    const precio = Number(solicitud.categoriaIrc.precio);
+
+    const factura = await prisma.factura.create({
+      data: {
+        codigo: `FACT-INSP-${Date.now()}`, // TODO: Mejorar generación de código
+        clienteId: 1, // TODO: Obtener del cliente real
+        estadoId: 1, // Abierta
+        subtotal: precio,
+        itbis: precio * 0.18, // 18% ITBIS
+        total: precio * 1.18,
+        metodoPago: null
+      }
+    });
+
+    // Actualizar solicitud con factura (se mantiene en PENDIENTE)
+    const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
+      where: { id: Number(id) },
+      data: {
+        facturaId: factura.id
+      },
+      include: {
+        estado: true,
+        factura: true,
+        categoriaIrc: true,
+        empresa: true
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Factura generada exitosamente',
+      data: solicitudActualizada
+    });
   } catch (error) {
-    console.error('Error al validar solicitud:', error);
+    console.error('Error al generar factura:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error al validar solicitud',
+      message: 'Error al generar factura',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }
@@ -255,6 +196,7 @@ export const validarSolicitud = async (req: AuthRequest, res: Response) => {
 
 /**
  * PASO 3 - CAJA PAGO: Webhook cuando se paga la factura
+ * Actualiza de PENDIENTE (1) a PAGADA (2)
  */
 export const marcarComoPagada = async (req: AuthRequest, res: Response) => {
   try {
@@ -272,10 +214,10 @@ export const marcarComoPagada = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (solicitud.estadoId !== 2) { // Debe estar en VALIDADA
+    if (solicitud.estadoId !== 1) { // Debe estar en PENDIENTE
       return res.status(400).json({
         success: false,
-        message: 'La solicitud no está en estado VALIDADA'
+        message: 'La solicitud no está en estado PENDIENTE'
       });
     }
 
@@ -283,7 +225,7 @@ export const marcarComoPagada = async (req: AuthRequest, res: Response) => {
     const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
       where: { id: solicitud.id },
       data: {
-        estadoId: 3, // PAGADA
+        estadoId: 2, // PAGADA
         fechaPago: new Date()
       },
       include: {
@@ -294,7 +236,7 @@ export const marcarComoPagada = async (req: AuthRequest, res: Response) => {
 
     return res.json({
       success: true,
-      message: 'Solicitud marcada como pagada',
+      message: 'Solicitud marcada como pagada. Esperando revisión de Inspectoría.',
       data: solicitudActualizada
     });
   } catch (error) {
@@ -308,7 +250,126 @@ export const marcarComoPagada = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * PASO 4 - INSPECTORÍA ASENTAMIENTO: Introducir número de libro y hoja, generar número de registro
+ * PASO 4 - INSPECTORÍA REVISIÓN: Aprobar revisión después de pago
+ * Actualiza de PAGADA (2) a EN_REVISION (3) y crea la empresa
+ */
+export const aprobarRevision = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const usuarioId = req.usuario?.id || 1;
+
+    const solicitud = await prisma.solicitudRegistroInspeccion.findUnique({
+      where: { id: Number(id) },
+      include: {
+        categoriaIrc: true,
+        formulario: {
+          include: {
+            productos: {
+              include: {
+                campos: {
+                  include: {
+                    campo: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!solicitud) {
+      return res.status(404).json({
+        success: false,
+        message: 'Solicitud no encontrada'
+      });
+    }
+
+    if (solicitud.estadoId !== 2) { // Debe estar en PAGADA
+      return res.status(400).json({
+        success: false,
+        message: 'La solicitud no está en estado PAGADA'
+      });
+    }
+
+    // 1. Buscar o crear empresa en EmpresaInspeccionada
+    let empresaId = solicitud.empresaId;
+
+    if (!empresaId) {
+      // Buscar si ya existe una empresa con ese RNC
+      const empresaExistente = await prisma.empresaInspeccionada.findFirst({
+        where: { rnc: solicitud.rnc }
+      });
+
+      if (empresaExistente) {
+        // Si existe, asociarla a la solicitud
+        empresaId = empresaExistente.id;
+      } else {
+        // Si no existe, crear nueva empresa temporal (se actualizará al asentar)
+        const fechaVenc = new Date();
+        fechaVenc.setFullYear(fechaVenc.getFullYear() + 1);
+
+        const nuevaEmpresa = await prisma.empresaInspeccionada.create({
+          data: {
+            nombreEmpresa: solicitud.nombreEmpresa || '',
+            nombreComercial: solicitud.nombreComercial,
+            rnc: solicitud.rnc,
+            direccion: 'Pendiente de actualizar',
+            telefono: 'N/A',
+            email: 'pendiente@onda.gov.do',
+            categoriaIrcId: solicitud.categoriaIrcId,
+            tipoPersona: 'MORAL',
+            descripcionActividades: 'Importador/Distribuidor de obras protegidas',
+            registrado: false, // Se marcará como true al asentar
+            fechaRegistro: new Date(),
+            fechaVencimiento: fechaVenc,
+            statusId: 1, // ACTIVA
+            creadoPorId: usuarioId
+          }
+        });
+        empresaId = nuevaEmpresa.id;
+      }
+    }
+
+    // 2. Actualizar solicitud a EN_REVISION
+    const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
+      where: { id: Number(id) },
+      data: {
+        estadoId: 3, // EN_REVISION
+        validadoPorId: usuarioId,
+        fechaValidacion: new Date(),
+        empresaId: empresaId // Asociar empresa
+      },
+      include: {
+        estado: true,
+        empresa: {
+          include: {
+            categoriaIrc: true
+          }
+        },
+        categoriaIrc: true,
+        factura: true
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Revisión aprobada. Lista para asentamiento.',
+      data: solicitudActualizada
+    });
+  } catch (error) {
+    console.error('Error al aprobar revisión:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al aprobar revisión',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * PASO 5 - INSPECTORÍA ASENTAMIENTO: Introducir número de libro y hoja, generar número de registro
+ * Actualiza de EN_REVISION (3) a ASENTADA (5)
  */
 export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
   try {
@@ -337,24 +398,46 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (solicitud.estadoId !== 3) { // Debe estar en PAGADA
+    if (solicitud.estadoId !== 3) { // Debe estar en EN_REVISION
       return res.status(400).json({
         success: false,
-        message: 'La solicitud no está en estado PAGADA'
+        message: 'La solicitud no está en estado EN_REVISION'
       });
     }
 
-    // Verificar que tenga formulario asociado
-    if (!solicitud.formulario) {
-      return res.status(400).json({
-        success: false,
-        message: 'La solicitud no tiene formulario asociado'
-      });
-    }
+    // Generar número de registro
+    // Para solicitudes IRC sin formulario, usar formato: numero/mes/año
+    let numeroRegistro: string;
 
-    // Usar el código del formulario como número de registro
-    // Formato del formulario: 00000003/11/2025 (8 dígitos / mes / año)
-    const numeroRegistro = solicitud.formulario.codigo;
+    if (solicitud.formulario) {
+      // Si tiene formulario (flujo antiguo), usar código del formulario
+      numeroRegistro = solicitud.formulario.codigo;
+    } else {
+      // Para solicitudes IRC sin formulario, generar número secuencial
+      const now = new Date();
+      const mes = (now.getMonth() + 1).toString().padStart(2, '0');
+      const año = now.getFullYear();
+
+      // Buscar último número de registro del año
+      const ultimoRegistro = await prisma.solicitudRegistroInspeccion.findFirst({
+        where: {
+          numeroRegistro: {
+            endsWith: `/${mes}/${año}`
+          }
+        },
+        orderBy: {
+          numeroRegistro: 'desc'
+        }
+      });
+
+      let numero = 1;
+      if (ultimoRegistro?.numeroRegistro) {
+        const partes = ultimoRegistro.numeroRegistro.split('/');
+        numero = parseInt(partes[0]) + 1;
+      }
+
+      numeroRegistro = `${numero.toString().padStart(8, '0')}/${mes}/${año}`;
+    }
 
     // Verificar que el número de registro no esté en uso (por seguridad)
     const registroExistente = await prisma.solicitudRegistroInspeccion.findFirst({
@@ -374,17 +457,20 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
     // Crear o actualizar la empresa asociada
     let empresaId = solicitud.empresaId;
 
-    // Obtener campos del formulario
-    const formCampos = await prisma.formularioProductoCampo.findMany({
-      where: {
-        formularioProducto: {
-          formularioId: solicitud.formulario.id
+    // Obtener campos del formulario (si existe)
+    let formCampos: any[] = [];
+    if (solicitud.formulario?.id) {
+      formCampos = await prisma.formularioProductoCampo.findMany({
+        where: {
+          formularioProducto: {
+            formularioId: solicitud.formulario.id
+          }
+        },
+        include: {
+          campo: true
         }
-      },
-      include: {
-        campo: true
-      }
-    });
+      });
+    }
 
     const getCampoValue = (campoNombre: string) => {
       const campo = formCampos.find(c => c.campo.campo === campoNombre);
@@ -408,7 +494,15 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
 
     if (solicitud.tipoSolicitud === 'REGISTRO_NUEVO') {
       if (!empresaId) {
-        console.log('🔵 Intentando crear empresa IRC...');
+        // Solo crear empresa si viene de formulario antiguo (no IRC desde AaU)
+        if (!solicitud.formulario) {
+          return res.status(400).json({
+            success: false,
+            message: 'Error: Solicitud de registro nuevo sin empresa asociada. Esta solicitud debe tener una empresa creada.'
+          });
+        }
+
+        console.log('🔵 Intentando crear empresa IRC desde formulario...');
         console.log(`   Nombre: ${solicitud.nombreEmpresa}`);
         console.log(`   RNC: ${solicitud.rnc}`);
         console.log(`   Categoría IRC ID: ${solicitud.categoriaIrcId}`);
@@ -461,7 +555,8 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
           throw error;
         }
       } else {
-        // Si ya existe, solo marcar como registrada
+        // Si ya existe (solicitudes IRC desde AaU), solo marcar como registrada
+        console.log(`🔵 Empresa ya existe (ID: ${empresaId}), marcando como registrada...`);
         await prisma.empresaInspeccionada.update({
           where: { id: empresaId },
           data: {
@@ -472,6 +567,7 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
             statusId: statusActiva.id
           }
         });
+        console.log(`✅ Empresa actualizada como registrada`);
       }
     } else if (solicitud.tipoSolicitud === 'RENOVACION') {
       if (!empresaId) {
@@ -511,7 +607,7 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
         numeroRegistro,
         numeroLibro,
         numeroHoja,
-        estadoId: 4, // ASENTADA
+        estadoId: 5, // ASENTADA (nuevo orden)
         asentadoPorId: usuarioId,
         fechaAsentamiento: new Date()
       },
@@ -547,6 +643,7 @@ export const asentarSolicitud = async (req: AuthRequest, res: Response) => {
 
 /**
  * DEVOLVER SOLICITUD A AuU: Para corrección de errores
+ * Puede devolver desde PAGADA (2) o EN_REVISION (3) a DEVUELTA (4)
  */
 export const devolverSolicitudAuU = async (req: AuthRequest, res: Response) => {
   try {
@@ -573,27 +670,23 @@ export const devolverSolicitudAuU = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Solo se puede devolver si está en estado PAGADA (3)
-    if (solicitud.estadoId !== 3) {
+    // Solo se puede devolver si está en PAGADA (2) o EN_REVISION (3)
+    if (solicitud.estadoId !== 2 && solicitud.estadoId !== 3) {
       return res.status(400).json({
         success: false,
         message: `No se puede devolver una solicitud en estado ${solicitud.estado.nombre}`
       });
     }
 
-    // Buscar o crear estado DEVUELTA
-    let estadoDevuelta = await prisma.estadoSolicitudInspeccion.findFirst({
+    // Buscar estado DEVUELTA (debe existir en el seed)
+    const estadoDevuelta = await prisma.estadoSolicitudInspeccion.findFirst({
       where: { nombre: 'DEVUELTA' }
     });
 
-    // Si no existe, crearlo
     if (!estadoDevuelta) {
-      estadoDevuelta = await prisma.estadoSolicitudInspeccion.create({
-        data: {
-          nombre: 'DEVUELTA',
-          descripcion: 'Solicitud devuelta a AuU para correcciones',
-          orden: 8
-        }
+      return res.status(500).json({
+        success: false,
+        message: 'No se encontró el estado DEVUELTA. Ejecuta el seed de la base de datos.'
       });
     }
 
@@ -602,7 +695,7 @@ export const devolverSolicitudAuU = async (req: AuthRequest, res: Response) => {
       where: { id: Number(id) },
       data: {
         estadoId: estadoDevuelta.id,
-        observaciones: `DEVUELTA POR PARALEGAL: ${motivo}\n\n${solicitud.observaciones || ''}`
+        observaciones: `DEVUELTA POR INSPECTORÍA: ${motivo}\n\n${solicitud.observaciones || ''}`
       },
       include: {
         estado: true,
@@ -636,22 +729,15 @@ export const generarCertificado = async (req: AuthRequest, res: Response) => {
     const solicitud: any = await prisma.solicitudRegistroInspeccion.findUnique({
       where: { id: Number(id) },
       include: {
-        empresa: true,
-        categoriaIrc: true,
-        factura: true,
-        formulario: {
+        empresa: {
           include: {
-            productos: {
-              include: {
-                campos: {
-                  include: {
-                    campo: true
-                  }
-                }
-              }
-            }
+            provincia: true,
+            consejoAdministracion: true,
+            principalesClientes: true
           }
-        }
+        },
+        categoriaIrc: true,
+        factura: true
       }
     });
 
@@ -662,11 +748,11 @@ export const generarCertificado = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Permitir regenerar si está en ASENTADA (4) o PENDIENTE_FIRMA (5)
-    if (solicitud.estadoId !== 4 && solicitud.estadoId !== 5) {
+    // Permitir regenerar si está en ASENTADA (5) o CERTIFICADO_GENERADO (6)
+    if (solicitud.estadoId !== 5 && solicitud.estadoId !== 6) {
       return res.status(400).json({
         success: false,
-        message: 'La solicitud no está en estado ASENTADA o PENDIENTE_FIRMA'
+        message: 'La solicitud no está en estado ASENTADA o CERTIFICADO_GENERADO'
       });
     }
 
@@ -696,92 +782,69 @@ export const generarCertificado = async (req: AuthRequest, res: Response) => {
     const fechaVencimiento = new Date();
     fechaVencimiento.setFullYear(fechaVencimiento.getFullYear() + 1);
 
-    // Extraer datos de los campos del formulario IRC
-    // Los campos están en formulario.productos[0].campos pero sin nombres, solo valores por índice
-    const formCampos = solicitud?.formulario?.productos?.[0]?.campos || [];
+    // Extraer datos de la empresa (ÚNICO FLUJO)
+    const empresa = solicitud.empresa!;
 
-    // Mapeo de índices basado en el orden del formulario IRC
-    const getCampoByIndex = (index: number) => formCampos[index]?.valor || undefined;
+    // Obtener primer miembro del consejo (presidente) si existe
+    const presidente = empresa.consejoAdministracion?.find((m: any) => m.cargo === 'Presidente');
 
-    // Índices según el formulario IRC:
-    const tipoSolicitud = getCampoByIndex(0);      // REGISTRO_NUEVO / RENOVACION
-    const nombreEmpresa = getCampoByIndex(1);      // Nombre empresa
-    const nombreComercial = getCampoByIndex(2);    // Nombre comercial
-    const rnc = getCampoByIndex(3);                // RNC
-    const categoriaIrc = getCampoByIndex(4);       // Categoría
-    const fechaInicioOp = getCampoByIndex(5);      // Fecha inicio operaciones
-    const principalesClientes = getCampoByIndex(6); // Principales clientes
-    const direccion = getCampoByIndex(7);          // Dirección
-    const provincia = getCampoByIndex(8);          // Provincia
-    const sector = getCampoByIndex(9);             // Sector
-    const telefono = getCampoByIndex(10);          // Teléfono principal
-    const telefono2 = getCampoByIndex(11);         // Teléfono secundario
-    const email = getCampoByIndex(12);             // Email
-    const representante = getCampoByIndex(13);     // Representante legal
-    const cedulaRep = getCampoByIndex(14);         // Cédula representante
-    const tipoPersona = getCampoByIndex(15);       // FISICA / MORAL
-    const descripcionAct = getCampoByIndex(16);    // Descripción actividades
+    console.log('=== DATOS EXTRAÍDOS DE EMPRESA ===');
+    console.log('Dirección:', empresa.direccion);
+    console.log('Teléfono:', empresa.telefono);
+    console.log('Persona Contacto:', empresa.personaContacto);
+    console.log('TipoPersona:', empresa.tipoPersona);
+    console.log('Descripción:', empresa.descripcionActividades);
+    console.log('===================================');
 
-    console.log('=== DATOS EXTRAÍDOS ===');
-    console.log('Dirección:', direccion);
-    console.log('Teléfono:', telefono);
-    console.log('Representante:', representante);
-    console.log('TipoPersona:', tipoPersona);
-    console.log('Descripción:', descripcionAct);
-    console.log('======================');
-
-    // Preparar datos para el certificado usando los valores extraídos por índice
     const datosCertificado = {
       numeroRegistro: solicitud.numeroRegistro!,
       numeroLibro: solicitud.numeroLibro || 'N/A',
       numeroHoja: solicitud.numeroHoja || 'N/A',
       fechaInscripcion: solicitud.fechaAsentamiento || new Date(),
       fechaVencimiento,
-      tipoSolicitud: solicitud.tipoSolicitud || 'PRIMERA_VEZ',
+      tipoSolicitud: solicitud.tipoSolicitud || 'REGISTRO_NUEVO',
       empresa: {
-        nombreEmpresa: nombreEmpresa || solicitud.nombreEmpresa || 'N/A',
-        nombreComercial: nombreComercial,
-        rnc: rnc || solicitud.rnc || 'N/A',
-        tipoPersona: tipoPersona,
-        categoriaIrc: categoriaIrc || solicitud.categoriaIrc?.nombre,
-        descripcionActividades: descripcionAct,
-        fechaInicioOperaciones: fechaInicioOp,
-        principalesClientes: principalesClientes,
-        // Ubicación
-        direccion: direccion,
-        sector: sector,
-        provincia: provincia,
-        telefono: telefono,
-        telefonoSecundario: telefono2,
-        correoElectronico: email,
-        // Representante Legal
-        representanteLegal: representante,
-        cedulaRepresentante: cedulaRep,
-        // Persona Moral (si aplica, estarían en índices posteriores)
-        presidenteNombre: undefined,
-        presidenteCedula: undefined,
-        presidenteDomicilio: undefined,
-        presidenteTelefono: undefined,
-        presidenteCelular: undefined,
-        presidenteEmail: undefined,
+        nombreEmpresa: empresa.nombreEmpresa,
+        nombreComercial: empresa.nombreComercial || undefined,
+        rnc: empresa.rnc,
+        tipoPersona: empresa.tipoPersona,
+        categoriaIrc: solicitud.categoriaIrc?.nombre,
+        descripcionActividades: empresa.descripcionActividades,
+        fechaInicioOperaciones: empresa.fechaConstitucion ? new Date(empresa.fechaConstitucion).toLocaleDateString() : undefined,
+        principalesClientes: empresa.principalesClientes?.map((c: any) => c.nombreCliente).join(', '),
+        direccion: empresa.direccion,
+        sector: empresa.sector || undefined,
+        provincia: empresa.provincia?.nombre,
+        telefono: empresa.telefono || undefined,
+        telefonoSecundario: empresa.telefonoSecundario || undefined,
+        correoElectronico: empresa.correoElectronico || undefined,
+        representanteLegal: empresa.personaContacto || undefined,
+        cedulaRepresentante: undefined,
+        // Persona Moral - del consejo de administración
+        presidenteNombre: presidente?.nombreCompleto,
+        presidenteCedula: presidente?.cedula,
+        presidenteDomicilio: presidente?.domicilio,
+        presidenteTelefono: presidente?.telefono,
+        presidenteCelular: presidente?.celular,
+        presidenteEmail: presidente?.email,
         vicepresidente: undefined,
         secretario: undefined,
         tesorero: undefined,
         administrador: undefined,
         domicilioConsejo: undefined,
         telefonoConsejo: undefined,
-        fechaConstitucion: undefined,
+        fechaConstitucion: empresa.fechaConstitucion ? new Date(empresa.fechaConstitucion).toLocaleDateString() : undefined,
         // Persona Física
-        nombrePropietario: getCampoByIndex(17), // Ajustar índices según estructura
-        cedulaPropietario: getCampoByIndex(18),
-        domicilioPropietario: getCampoByIndex(19),
-        telefonoPropietario: getCampoByIndex(20),
-        celularPropietario: getCampoByIndex(21),
-        emailPropietario: getCampoByIndex(22),
-        nombreAdministrador: getCampoByIndex(23),
-        cedulaAdministrador: getCampoByIndex(24),
-        telefonoAdministrador: getCampoByIndex(25),
-        fechaInicioActividades: getCampoByIndex(26)
+        nombrePropietario: empresa.nombrePropietario || undefined,
+        cedulaPropietario: empresa.cedulaPropietario || undefined,
+        domicilioPropietario: undefined,
+        telefonoPropietario: undefined,
+        celularPropietario: undefined,
+        emailPropietario: undefined,
+        nombreAdministrador: undefined,
+        cedulaAdministrador: undefined,
+        telefonoAdministrador: undefined,
+        fechaInicioActividades: undefined
       }
     };
 
@@ -827,13 +890,13 @@ export const generarCertificado = async (req: AuthRequest, res: Response) => {
       mensaje = 'Certificado generado exitosamente. Pendiente de firma.';
     }
 
-    // Actualizar solicitud a PENDIENTE_FIRMA solo si estaba en ASENTADA
+    // Actualizar solicitud a CERTIFICADO_GENERADO solo si estaba en ASENTADA
     const updateData: any = {
       certificadoId: certificado.id
     };
 
-    if (solicitud.estadoId === 4) {
-      updateData.estadoId = 5; // PENDIENTE_FIRMA
+    if (solicitud.estadoId === 5) {
+      updateData.estadoId = 6; // CERTIFICADO_GENERADO
     }
 
     const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
@@ -865,17 +928,36 @@ export const generarCertificado = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * PASO 7 - AuU ENTREGA: Marcar certificado como entregado
+ * PASO 8 - AuU ENTREGA: Marcar certificado como entregado
+ * Actualiza de CERTIFICADO_CARGADO (8) a ENTREGADA (9)
  */
 export const entregarCertificado = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const { nombreReceptor, cedulaReceptor, esRepresentante } = req.body;
     const usuarioId = req.usuario?.id;
+    const file = req.file;
 
     if (!usuarioId) {
       return res.status(401).json({
         success: false,
         message: 'Usuario no autenticado'
+      });
+    }
+
+    // Validar datos requeridos
+    if (!nombreReceptor || !cedulaReceptor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nombre y cédula del receptor son obligatorios'
+      });
+    }
+
+    // Si es representante, el documento legal es obligatorio
+    if (esRepresentante === 'true' && !file) {
+      return res.status(400).json({
+        success: false,
+        message: 'El documento legal es obligatorio para representantes'
       });
     }
 
@@ -894,21 +976,33 @@ export const entregarCertificado = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Debe estar en estado FIRMADA (estado 6)
-    if (solicitud.estadoId !== 6) {
+    // Debe estar en estado CERTIFICADO_CARGADO (estado 8)
+    if (solicitud.estadoId !== 8) {
       return res.status(400).json({
         success: false,
-        message: 'La solicitud debe estar en estado FIRMADA para poder entregarla'
+        message: 'La solicitud debe estar en estado CERTIFICADO_CARGADO para poder entregarla'
       });
     }
 
-    // Actualizar solicitud a ENTREGADA (estado 7)
+    // Preparar datos de actualización
+    const updateData: any = {
+      estadoId: 9, // ENTREGADA
+      fechaEntrega: new Date(),
+      entregadoPorId: usuarioId,
+      nombreReceptor,
+      cedulaReceptor,
+      esRepresentante: esRepresentante === 'true'
+    };
+
+    // Si hay archivo, guardarlo
+    if (file) {
+      updateData.rutaDocumentoLegal = file.path;
+    }
+
+    // Actualizar solicitud a ENTREGADA (estado 9)
     const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
       where: { id: Number(id) },
-      data: {
-        estadoId: 7, // ENTREGADA
-        fechaEntrega: new Date()
-      },
+      data: updateData,
       include: {
         estado: true,
         certificado: true,
@@ -917,13 +1011,11 @@ export const entregarCertificado = async (req: AuthRequest, res: Response) => {
     });
 
     // Actualizar empresa según tipo de solicitud
+    // Usar la fechaVencimiento de la solicitud (respeta años de vigencia pagados)
     if (solicitud.empresaId) {
-      const fechaVencimiento = new Date();
-      fechaVencimiento.setFullYear(fechaVencimiento.getFullYear() + 1);
-
       const updateData: any = {
         registrado: true,
-        fechaVencimiento
+        fechaVencimiento: solicitud.fechaVencimiento || new Date(new Date().setFullYear(new Date().getFullYear() + 1))
       };
 
       if (solicitud.tipoSolicitud === 'REGISTRO_NUEVO') {
@@ -989,7 +1081,11 @@ export const listarSolicitudes = async (req: AuthRequest, res: Response) => {
         include: {
           empresa: {
             include: {
-              categoriaIrc: true
+              categoriaIrc: true,
+              provincia: true,
+              consejoAdministracion: true,
+              principalesClientes: true,
+              documentos: true
             }
           },
           categoriaIrc: true,
@@ -1025,6 +1121,7 @@ export const listarSolicitudes = async (req: AuthRequest, res: Response) => {
               id: true,
               numeroCertificado: true,
               rutaPdf: true,
+              rutaPdfFirmado: true,
               fechaEmision: true
             }
           }
@@ -1112,7 +1209,8 @@ export const obtenerSolicitud = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * PASO 6 - FIRMA: Marcar certificado como firmado (Registro)
+ * PASO 6 - REGISTRO FIRMA: Marcar certificado como firmado digitalmente
+ * Actualiza de CERTIFICADO_GENERADO (6) a FIRMADA (7)
  */
 export const firmarCertificado = async (req: AuthRequest, res: Response) => {
   try {
@@ -1138,11 +1236,87 @@ export const firmarCertificado = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Validar que esté en estado PENDIENTE_FIRMA (estado 5)
-    if (solicitud.estadoId !== 5) {
+    // Validar que esté en estado CERTIFICADO_GENERADO (estado 6)
+    if (solicitud.estadoId !== 6) {
       return res.status(400).json({
         success: false,
-        message: 'La solicitud debe estar en estado PENDIENTE_FIRMA para firmar'
+        message: 'La solicitud debe estar en estado CERTIFICADO_GENERADO para firmar'
+      });
+    }
+
+    if (!solicitud.certificadoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'La solicitud no tiene un certificado generado'
+      });
+    }
+
+    // Actualizar certificado con fecha de firma (firma digital)
+    await prisma.certificadoInspeccion.update({
+      where: { id: solicitud.certificadoId },
+      data: {
+        fechaFirma: new Date()
+      }
+    });
+
+    // Actualizar solicitud a FIRMADA (estado 7)
+    const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
+      where: { id: Number(id) },
+      data: {
+        estadoId: 7, // FIRMADA
+        firmadoPorId: usuarioId
+      },
+      include: {
+        empresa: {
+          include: {
+            categoriaIrc: true
+          }
+        },
+        estado: true,
+        certificado: true
+      }
+    });
+
+    return res.json({
+      success: true,
+      data: solicitudActualizada,
+      message: 'Certificado firmado digitalmente. Pendiente de cargar PDF firmado.'
+    });
+  } catch (error) {
+    console.error('Error al firmar certificado:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al firmar certificado',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * PASO 7 - SUBIR PDF FIRMADO: Cargar certificado firmado al sistema
+ * Actualiza de FIRMADA (7) a CERTIFICADO_CARGADO (8)
+ */
+export const subirCertificadoFirmado = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const solicitud = await prisma.solicitudRegistroInspeccion.findUnique({
+      where: { id: Number(id) },
+      include: { estado: true, certificado: true }
+    });
+
+    if (!solicitud) {
+      return res.status(404).json({
+        success: false,
+        message: 'Solicitud no encontrada'
+      });
+    }
+
+    // Validar que esté en estado CERTIFICADO_GENERADO (estado 6)
+    if (solicitud.estadoId !== 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'La solicitud debe estar en estado CERTIFICADO_GENERADO para subir el PDF firmado'
       });
     }
 
@@ -1164,20 +1338,31 @@ export const firmarCertificado = async (req: AuthRequest, res: Response) => {
     // Ruta del certificado firmado subido
     const rutaPdfFirmado = `/uploads/certificados/${req.file.filename}`;
 
-    // Actualizar certificado con la ruta del PDF firmado y fecha de firma
+    // Actualizar certificado con la ruta del PDF firmado
     await prisma.certificadoInspeccion.update({
       where: { id: solicitud.certificadoId },
       data: {
-        rutaPdfFirmado,
-        fechaFirma: new Date()
+        rutaPdfFirmado
       }
     });
 
-    // Actualizar solicitud a FIRMADA (estado 6)
+    // Buscar el estado CERTIFICADO_CARGADO
+    const estadoCertificadoCargado = await prisma.estadoSolicitudInspeccion.findUnique({
+      where: { nombre: 'CERTIFICADO_CARGADO' }
+    });
+
+    if (!estadoCertificadoCargado) {
+      return res.status(500).json({
+        success: false,
+        message: 'Estado CERTIFICADO_CARGADO no encontrado en la base de datos'
+      });
+    }
+
+    // Actualizar solicitud a CERTIFICADO_CARGADO
     const solicitudActualizada = await prisma.solicitudRegistroInspeccion.update({
       where: { id: Number(id) },
       data: {
-        estadoId: 6 // FIRMADA
+        estadoId: estadoCertificadoCargado.id
       },
       include: {
         empresa: {
@@ -1196,10 +1381,10 @@ export const firmarCertificado = async (req: AuthRequest, res: Response) => {
       message: 'Certificado firmado cargado exitosamente. Listo para entrega.'
     });
   } catch (error) {
-    console.error('Error al firmar certificado:', error);
+    console.error('Error al subir certificado firmado:', error);
     return res.status(500).json({
       success: false,
-      message: 'Error al firmar certificado',
+      message: 'Error al subir certificado firmado',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }

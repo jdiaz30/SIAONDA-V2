@@ -31,6 +31,40 @@ interface SolicitudIRC {
     id: number;
     nombre: string;
   };
+  empresa?: {
+    id: number;
+    nombreEmpresa: string;
+    nombreComercial: string | null;
+    rnc: string;
+    tipoPersona: string;
+    nombrePropietario: string | null;
+    cedulaPropietario: string | null;
+    personaContacto: string | null;
+    descripcionActividades: string;
+    direccion: string;
+    sector: string | null;
+    telefono: string | null;
+    telefonoSecundario: string | null;
+    correoElectronico: string | null;
+    paginaWeb: string | null;
+    cantidadEmpleados: number | null;
+    fechaConstitucion: string | null;
+    provincia: {
+      id: number;
+      nombre: string;
+    };
+    consejoAdministracion?: any[];
+    principalesClientes?: any[];
+    documentos?: Array<{
+      id: number;
+      tipoDocumento: string;
+      nombreArchivo: string;
+      rutaArchivo: string;
+      tamano: number;
+      mimeType: string;
+      cargadoEn: string;
+    }>;
+  } | null;
   formulario: {
     id: number;
     codigo: string;
@@ -76,7 +110,7 @@ const ModalAsentar = ({ solicitud, onClose, onSuccess }: ModalAsentarProps) => {
     e.preventDefault();
 
     if (!numeroLibro.trim() || !numeroHoja.trim()) {
-      alert('⚠️ El número de libro y número de hoja son requeridos');
+      alert('El número de libro y número de hoja son requeridos');
       return;
     }
 
@@ -87,13 +121,13 @@ const ModalAsentar = ({ solicitud, onClose, onSuccess }: ModalAsentarProps) => {
         numeroHoja: numeroHoja.trim()
       });
 
-      const numeroRegistro = solicitud.formulario?.codigo || 'N/A';
+      const numeroRegistro = solicitud.codigo;
 
-      alert(`✅ Registro asentado exitosamente\n\nNúmero de Registro: ${numeroRegistro}\nLibro: ${numeroLibro}\nHoja: ${numeroHoja}`);
+      alert(`Registro asentado exitosamente\n\nCódigo de Solicitud: ${numeroRegistro}\nLibro: ${numeroLibro}\nHoja: ${numeroHoja}`);
       onSuccess();
       onClose();
     } catch (error: any) {
-      alert('❌ Error al registrar asiento: ' + (error.response?.data?.message || error.message));
+      alert('Error al registrar asiento: ' + (error.response?.data?.message || error.message));
     } finally {
       setLoading(false);
     }
@@ -128,8 +162,8 @@ const ModalAsentar = ({ solicitud, onClose, onSuccess }: ModalAsentarProps) => {
                 <span className="ml-2 text-blue-900">{solicitud.codigo}</span>
               </div>
               <div>
-                <span className="text-blue-700 font-medium">Formulario:</span>
-                <span className="ml-2 text-blue-900">{solicitud.formulario?.codigo || 'N/A'}</span>
+                <span className="text-blue-700 font-medium">Tipo:</span>
+                <span className="ml-2 text-blue-900">{solicitud.tipoSolicitud === 'REGISTRO_NUEVO' ? 'Registro Nuevo' : 'Renovación'}</span>
               </div>
               <div className="col-span-2">
                 <span className="text-blue-700 font-medium">Empresa:</span>
@@ -149,10 +183,10 @@ const ModalAsentar = ({ solicitud, onClose, onSuccess }: ModalAsentarProps) => {
           {/* Información importante */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <p className="text-sm text-blue-800">
-              <strong>Número de Registro:</strong> <code className="bg-white px-2 py-1 rounded">{solicitud.formulario?.codigo || 'N/A'}</code>
+              <strong>Código de Solicitud IRC:</strong> <code className="bg-white px-2 py-1 rounded">{solicitud.codigo}</code>
             </p>
             <p className="text-xs text-blue-600 mt-2">
-              Este es el número que aparecerá en el certificado (asignado automáticamente al crear el formulario)
+              Este código identifica la solicitud IRC y aparecerá en el certificado
             </p>
           </div>
 
@@ -229,7 +263,7 @@ const ModalDevolver = ({ solicitud, onClose, onSuccess }: ModalDevolverProps) =>
     e.preventDefault();
 
     if (!motivo.trim()) {
-      alert('⚠️ Debe especificar el motivo de la devolución');
+      alert('Debe especificar el motivo de la devolución');
       return;
     }
 
@@ -342,94 +376,18 @@ const ModalDevolver = ({ solicitud, onClose, onSuccess }: ModalDevolverProps) =>
 
 const ModalFormulario = ({ solicitud, onClose }: ModalFormularioProps) => {
   if (!solicitud) return null;
-
-  const campos = solicitud.formulario?.productos?.[0]?.campos || [];
-
-  // Función para convertir camelCase a texto legible
-  const formatearEtiqueta = (texto: string): string => {
-    // Si ya tiene etiqueta formateada, usarla
-    if (texto.includes(' ') && texto[0] === texto[0].toUpperCase()) {
-      return texto;
-    }
-
-    // Mapeo de campos conocidos
-    const etiquetas: { [key: string]: string } = {
-      tipoSolicitud: 'Tipo de Solicitud',
-      nombreEmpresa: 'Nombre de la Empresa',
-      nombreComercial: 'Nombre Comercial',
-      rnc: 'RNC',
-      categoriaIrc: 'Categoría IRC',
-      fechaInicioOperaciones: 'Fecha de Inicio de Operaciones',
-      principalesClientes: 'Principales Clientes',
-      direccion: 'Dirección',
-      provincia: 'Provincia',
-      sector: 'Sector',
-      telefono: 'Teléfono',
-      telefonoSecundario: 'Teléfono Secundario',
-      email: 'Correo Electrónico',
-      representanteLegal: 'Representante Legal',
-      cedulaRepresentante: 'Cédula del Representante',
-      tipoPersona: 'Tipo de Persona',
-      descripcionActividades: 'Descripción de Actividades',
-      presidenteNombre: 'Presidente - Nombre',
-      presidenteCedula: 'Presidente - Cédula',
-      presidenteDomicilio: 'Presidente - Domicilio',
-      presidenteTelefono: 'Presidente - Teléfono',
-      presidenteCelular: 'Presidente - Celular',
-      presidenteEmail: 'Presidente - Email',
-      vicepresidente: 'Vicepresidente',
-      secretario: 'Secretario',
-      tesorero: 'Tesorero',
-      administrador: 'Administrador',
-      domicilioConsejo: 'Domicilio del Consejo',
-      telefonoConsejo: 'Teléfono del Consejo',
-      fechaConstitucion: 'Fecha de Constitución',
-      razonSocial: 'Razón Social',
-      nombreRepresentante: 'Nombre del Representante',
-      nombreCompleto: 'Nombre Completo',
-      cedulaIdentidad: 'Cédula de Identidad',
-      domicilio: 'Domicilio',
-      celular: 'Celular',
-    };
-
-    // Si existe en el mapeo, retornar
-    if (etiquetas[texto]) {
-      return etiquetas[texto];
-    }
-
-    // Convertir camelCase a palabras separadas
-    return texto
-      .replace(/([A-Z])/g, ' $1') // Agregar espacio antes de mayúsculas
-      .replace(/^./, (str) => str.toUpperCase()) // Primera letra mayúscula
-      .trim();
-  };
-
-  // Función para determinar la categoría de un campo
-  const obtenerCategoria = (nombreCampo: string): string => {
-    const campo = nombreCampo.toLowerCase();
-
-    if (campo.includes('presidente') || campo.includes('vicepresidente') ||
-        campo.includes('secretario') || campo.includes('tesorero') ||
-        campo.includes('administrador') || campo.includes('consejo')) {
-      return 'Miembros del Consejo';
-    }
-
-    if (campo.includes('representante') || campo.includes('cedula') &&
-        (campo.includes('representante') || campo === 'cedularepresentante')) {
-      return 'Representante Legal';
-    }
-
-    if (campo.includes('direccion') || campo.includes('provincia') ||
-        campo.includes('sector') || campo.includes('domicilio')) {
-      return 'Ubicación';
-    }
-
-    if (campo.includes('telefono') || campo.includes('celular') || campo.includes('email')) {
-      return 'Información de Contacto';
-    }
-
-    return 'Información General';
-  };
+  if (!solicitud.empresa) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+          <p className="text-center text-gray-600">No hay datos de empresa disponibles</p>
+          <button onClick={onClose} className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -459,8 +417,8 @@ const ModalFormulario = ({ solicitud, onClose }: ModalFormularioProps) => {
                 <span className="ml-2 text-blue-900">{solicitud.codigo}</span>
               </div>
               <div>
-                <span className="text-blue-700 font-medium">Formulario:</span>
-                <span className="ml-2 text-blue-900">{solicitud.formulario?.codigo || 'N/A'}</span>
+                <span className="text-blue-700 font-medium">Tipo:</span>
+                <span className="ml-2 text-blue-900">{solicitud.tipoSolicitud === 'REGISTRO_NUEVO' ? 'Registro Nuevo' : 'Renovación'}</span>
               </div>
               <div>
                 <span className="text-blue-700 font-medium">Categoría IRC:</span>
@@ -481,77 +439,206 @@ const ModalFormulario = ({ solicitud, onClose }: ModalFormularioProps) => {
             </div>
           </div>
 
-          {/* Campos del Formulario */}
+          {/* Datos de la Empresa IRC */}
           <div className="space-y-4">
             <h3 className="font-semibold text-gray-900 text-lg border-b-2 border-gray-200 pb-2">
-              Datos del Formulario IRC
+              Datos de la Empresa IRC
             </h3>
 
-            {campos.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-lg">📄</p>
-                <p className="mt-2">No hay campos disponibles en el formulario</p>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {(() => {
-                  // Agrupar campos por categoría
-                  const camposPorCategoria: { [key: string]: typeof campos } = {};
+            <div className="space-y-6">
+                {/* Información General de la Empresa */}
+                <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
+                  <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500">
+                    Información General
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Nombre Empresa</label>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.nombreEmpresa}</div>
+                    </div>
+                    {solicitud.empresa.nombreComercial && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Nombre Comercial</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.nombreComercial}</div>
+                      </div>
+                    )}
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">RNC</label>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.rnc}</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Tipo de Persona</label>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.tipoPersona === 'MORAL' ? 'Persona Moral' : 'Persona Física'}</div>
+                    </div>
+                    {solicitud.empresa.nombrePropietario && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Propietario</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.nombrePropietario}</div>
+                      </div>
+                    )}
+                    {solicitud.empresa.cedulaPropietario && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Cédula Propietario</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.cedulaPropietario}</div>
+                      </div>
+                    )}
+                    {solicitud.empresa.personaContacto && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Persona de Contacto</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.personaContacto}</div>
+                      </div>
+                    )}
+                    {solicitud.empresa.cantidadEmpleados && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Cantidad de Empleados</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.cantidadEmpleados}</div>
+                      </div>
+                    )}
+                    <div className="bg-white rounded-lg p-3 border border-gray-200 md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Descripción de Actividades</label>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.descripcionActividades}</div>
+                    </div>
+                  </div>
+                </div>
 
-                  campos.forEach((campo) => {
-                    const categoria = obtenerCategoria(campo.campo.campo);
-                    if (!camposPorCategoria[categoria]) {
-                      camposPorCategoria[categoria] = [];
-                    }
-                    camposPorCategoria[categoria].push(campo);
-                  });
+                {/* Ubicación */}
+                <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
+                  <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500">
+                    Ubicación
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-3 border border-gray-200 md:col-span-2">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Dirección</label>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.direccion}</div>
+                    </div>
+                    {solicitud.empresa.sector && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Sector</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.sector}</div>
+                      </div>
+                    )}
+                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Provincia</label>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.provincia.nombre}</div>
+                    </div>
+                  </div>
+                </div>
 
-                  // Orden de categorías
-                  const ordenCategorias = [
-                    'Información General',
-                    'Ubicación',
-                    'Información de Contacto',
-                    'Representante Legal',
-                    'Miembros del Consejo',
-                  ];
+                {/* Información de Contacto */}
+                <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
+                  <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500">
+                    Información de Contacto
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {solicitud.empresa.telefono && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Teléfono</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.telefono}</div>
+                      </div>
+                    )}
+                    {solicitud.empresa.telefonoSecundario && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Teléfono Secundario</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.telefonoSecundario}</div>
+                      </div>
+                    )}
+                    {solicitud.empresa.correoElectronico && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Correo Electrónico</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.correoElectronico}</div>
+                      </div>
+                    )}
+                    {solicitud.empresa.paginaWeb && (
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Página Web</label>
+                        <div className="text-sm text-gray-900">{solicitud.empresa.paginaWeb}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-                  return ordenCategorias.map((categoria) => {
-                    const camposCategoria = camposPorCategoria[categoria];
-                    if (!camposCategoria || camposCategoria.length === 0) return null;
+                {/* Consejo de Administración */}
+                {solicitud.empresa.consejoAdministracion && solicitud.empresa.consejoAdministracion.length > 0 && (
+                  <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
+                    <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500">
+                      Consejo de Administración
+                    </h4>
+                    <div className="space-y-3">
+                      {solicitud.empresa.consejoAdministracion.map((miembro: any, index: number) => (
+                        <div key={index} className="bg-white rounded-lg p-3 border border-gray-200">
+                          <div className="font-semibold text-gray-900">{miembro.cargo}</div>
+                          <div className="text-sm text-gray-700">{miembro.nombreCompleto}</div>
+                          {miembro.cedula && <div className="text-xs text-gray-600">Cédula: {miembro.cedula}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                    return (
-                      <div key={categoria} className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
-                        <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500 flex items-center gap-2">
-                          <span className="text-blue-600">📋</span>
-                          {categoria}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {camposCategoria.map((campo) => {
-                            const etiqueta = formatearEtiqueta(campo.campo.etiqueta || campo.campo.campo);
-                            const valor = campo.valor && campo.valor.trim() !== '' ? campo.valor : null;
+                {/* Principales Clientes */}
+                {solicitud.empresa.principalesClientes && solicitud.empresa.principalesClientes.length > 0 && (
+                  <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
+                    <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500">
+                      Principales Clientes
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {solicitud.empresa.principalesClientes.map((cliente: any, index: number) => (
+                        <div key={index} className="bg-white rounded-lg p-3 border border-gray-200">
+                          <div className="text-sm text-gray-900">{cliente.nombreCliente}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-                            return (
-                              <div key={campo.id} className="bg-white rounded-lg p-3 border border-gray-200 hover:border-blue-300 transition-colors">
-                                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                                  {etiqueta}
-                                </label>
-                                <div className="text-sm text-gray-900">
-                                  {valor ? (
-                                    <span className="font-medium">{valor}</span>
-                                  ) : (
-                                    <span className="text-gray-400 italic text-xs">Sin especificar</span>
-                                  )}
+                {/* Documentos de Soporte */}
+                {solicitud.empresa.documentos && solicitud.empresa.documentos.length > 0 && (
+                  <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-4 border border-gray-200">
+                    <h4 className="text-lg font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-500">
+                      Documentos de Soporte
+                    </h4>
+                    <div className="space-y-3">
+                      {solicitud.empresa.documentos.map((documento: any) => (
+                        <div key={documento.id} className="bg-white rounded-lg p-4 border border-gray-200 hover:border-blue-400 transition-colors">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span className="font-semibold text-gray-900">{documento.nombreArchivo}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                                <div>
+                                  <span className="font-medium">Tipo:</span> {documento.tipoDocumento}
+                                </div>
+                                <div>
+                                  <span className="font-medium">Tamaño:</span> {(documento.tamano / 1024).toFixed(2)} KB
+                                </div>
+                                <div className="col-span-2">
+                                  <span className="font-medium">Cargado:</span> {new Date(documento.cargadoEn).toLocaleString('es-DO')}
                                 </div>
                               </div>
-                            );
-                          })}
+                            </div>
+                            <a
+                              href={`http://localhost:3000${documento.rutaArchivo}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-4 px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                              Ver
+                            </a>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            )}
+                      ))}
+                    </div>
+                  </div>
+                )}
+            </div>
           </div>
 
           {/* Botón Cerrar */}
@@ -681,7 +768,7 @@ export default function RegistrosAsentamientoPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{solicitud.codigo}</div>
                         <div className="text-xs text-gray-500">
-                          Form: {solicitud.formulario?.codigo || 'N/A'}
+                          {solicitud.tipoSolicitud === 'REGISTRO_NUEVO' ? 'Registro Nuevo' : 'Renovación'}
                         </div>
                       </td>
                       <td className="px-6 py-4">

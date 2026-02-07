@@ -31,6 +31,30 @@ export interface Formulario {
   clientes: FormularioCliente[];
   productos: FormularioProducto[];
   archivos: FormularioArchivo[];
+
+  // Vinculación con solicitudes IRC
+  solicitudIrc?: {
+    id: number;
+    codigo: string;
+    tipoSolicitud: string;
+    nombreEmpresa: string;
+    rnc: string;
+    estadoId: number;
+    estado: {
+      id: number;
+      nombre: string;
+    };
+    categoriaIrc?: {
+      id: number;
+      codigo: string;
+      nombre: string;
+      precio: number;
+    };
+    factura?: {
+      id: number;
+      total: number;
+    };
+  };
 }
 
 export interface FormularioCliente {
@@ -167,16 +191,39 @@ const aauService = {
     return response.data;
   },
 
-  // Obtener certificados pendientes de entrega
+  // Obtener certificados pendientes de entrega (obras + IRC)
   async getCertificadosPendientes() {
     const response = await api.get('/aau/formularios/pendientes-entrega');
     return response.data;
+  },
+
+  // Entregar certificado (unificado para obras e IRC)
+  async entregarCertificado(id: number, tipo: 'OBRA' | 'IRC', formData?: FormData) {
+    if (formData) {
+      // Si hay formData, usarlo (incluye nombre, cédula y documento legal)
+      const response = await api.post(`/aau/certificados/${id}/entregar`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
+    } else {
+      // Versión anterior sin formData
+      const response = await api.post(`/aau/certificados/${id}/entregar`, { tipo });
+      return response.data;
+    }
   },
 
   // Obtener historial de un formulario
   async getHistorial(id: number): Promise<HistorialFormulario[]> {
     const response = await api.get(`/aau/formularios/${id}/historial`);
     return response.data;
+  },
+
+  // Obtener historial de entregas de certificados
+  async getHistorialEntregas(params?: { tipo?: 'OBRA' | 'IRC'; fechaDesde?: string; fechaHasta?: string }) {
+    const response = await api.get('/aau/historial-entregas', { params });
+    return response.data.data;
   },
 };
 

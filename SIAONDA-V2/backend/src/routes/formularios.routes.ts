@@ -6,12 +6,15 @@ import {
   getFormulario,
   createFormulario,
   createFormularioObra,
+  createFormularioObrasMultiple,
   updateFormulario,
   asentarFormulario,
   getEstadosFormulario,
   deleteFormulario,
   uploadArchivos,
-  deleteArchivo
+  deleteArchivo,
+  corregirFormulario,
+  getHistorialFormulario
 } from '../controllers/formularios.controller';
 
 const router = Router();
@@ -20,9 +23,12 @@ router.use(authenticate);
 router.get('/estados', getEstadosFormulario);
 router.get('/', getFormularios);
 router.get('/:id', getFormulario);
+router.get('/:id/historial', getHistorialFormulario);
 router.post('/', createFormulario);
-router.post('/obras', createFormularioObra); // Nuevo endpoint para obras
+router.post('/obras', createFormularioObra); // Endpoint para obra individual
+router.post('/obras-multiple', createFormularioObrasMultiple); // Endpoint para carrito de obras
 router.put('/:id', updateFormulario);
+router.put('/:id/corregir', corregirFormulario); // Corregir formulario devuelto
 router.post('/:id/asentar', asentarFormulario);
 router.delete('/:id', deleteFormulario);
 

@@ -1,10 +1,12 @@
 # SIAONDA V2
 
-Sistema Integral de la Oficina Nacional de Derecho de Autor - Versión 2
+**Sistema Integral de la Oficina Nacional de Derecho de Autor - Versión 2**
+
+Sistema de gestión integral para la ONDA (Oficina Nacional de Derecho de Autor de la República Dominicana), desarrollado con tecnologías modernas y siguiendo las mejores prácticas de desarrollo de software.
 
 ## Descripción
 
-Reescritura completa y moderna del sistema SIAONDA, manteniendo 100% de la funcionalidad original pero con tecnologías actuales y mejores prácticas de desarrollo.
+SIAONDA V2 es una reescritura completa del sistema SIAONDA, manteniendo 100% de la funcionalidad original pero con tecnologías actuales, mejor rendimiento, seguridad mejorada y una experiencia de usuario moderna.
 
 ## Stack Tecnológico
 
@@ -135,43 +137,97 @@ SIAONDA-V2/
 
 > **Nota**: El rol "Almacén" ha sido excluido de esta versión
 
-## Instalación
+## Inicio Rápido
+
+### Prerrequisitos
+
+Antes de comenzar, asegúrate de tener instalado:
+
+- **Node.js** 20+
+- **PostgreSQL** 16+
+- **npm** o **yarn**
+- **Git**
+
+### Instalación
+
+#### 1. Clonar el repositorio
 
 ```bash
-# Clonar repositorio
+git clone <url-del-repositorio>
 cd SIAONDA-V2
+```
 
-# Instalar dependencias del backend
+#### 2. Configurar el Backend
+
+```bash
 cd backend
+
+# Instalar dependencias
 npm install
 
-# Configurar variables de entorno
+# Copiar y configurar variables de entorno
 cp .env.example .env
+# Editar .env con tu configuración de base de datos
 
-# Ejecutar migraciones
+# Generar cliente de Prisma
+npx prisma generate
+
+# Ejecutar migraciones de base de datos
 npx prisma migrate dev
+
+# (Opcional) Poblar base de datos con datos iniciales
+npm run seed
 
 # Iniciar servidor de desarrollo
 npm run dev
+```
 
-# En otra terminal, instalar frontend
-cd ../frontend
+El backend estará corriendo en `http://localhost:3000`
+
+#### 3. Configurar el Frontend
+
+```bash
+# En una nueva terminal
+cd frontend
+
+# Instalar dependencias
 npm install
 
-# Iniciar aplicación
+# Copiar y configurar variables de entorno
+cp .env.example .env
+# Verificar que VITE_API_URL apunte al backend correcto
+
+# Iniciar aplicación de desarrollo
 npm run dev
 ```
 
+El frontend estará corriendo en `http://localhost:5173`
+
+### Usuario por Defecto
+
+Después de ejecutar el seed, puedes iniciar sesión con las credenciales definidas en el seed de base de datos.
+
 ## Desarrollo
 
-```bash
-# Backend (http://localhost:3000)
-cd backend
-npm run dev
+### Scripts Disponibles
 
-# Frontend (http://localhost:5173)
-cd frontend
-npm run dev
+#### Backend
+
+```bash
+npm run dev          # Iniciar en modo desarrollo
+npm run build        # Compilar TypeScript
+npm run start        # Ejecutar producción
+npm run prisma:studio # Abrir Prisma Studio
+npm run seed         # Poblar base de datos
+```
+
+#### Frontend
+
+```bash
+npm run dev          # Iniciar en modo desarrollo
+npm run build        # Build de producción
+npm run preview      # Preview del build
+npm run lint         # Ejecutar linter
 ```
 
 ## Principios de Desarrollo

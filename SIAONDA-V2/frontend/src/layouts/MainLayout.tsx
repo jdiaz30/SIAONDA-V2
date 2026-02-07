@@ -1,9 +1,11 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '../services/authService';
+import { usePermissions } from '../hooks/usePermissions';
 
 const MainLayout = () => {
   const { usuario, logout } = useAuthStore();
+  const { isAdmin } = usePermissions();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -57,14 +59,27 @@ const MainLayout = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex gap-6 py-3">
             <NavLink to="/">Inicio</NavLink>
-            {usuario?.tipo === 'Administrador' && (
-              <NavLink to="/usuarios">Usuarios</NavLink>
-            )}
+
+            {/* Gestión de Usuarios - Solo ADMINISTRADOR */}
+            {isAdmin() && <NavLink to="/usuarios">Usuarios</NavLink>}
+
+            {/* Módulo ATU */}
             <NavLink to="/aau">Atención al Usuario</NavLink>
+
+            {/* Módulo REGISTRO */}
             <NavLink to="/registro">Registro</NavLink>
+
+            {/* Módulo CAJAS */}
             <NavLink to="/cajas">Cajas</NavLink>
+
+            {/* Módulo INSPECTORÍA */}
             <NavLink to="/inspectoria">Inspectoría</NavLink>
+
+            {/* Módulo JURÍDICO */}
             <NavLink to="/juridico">Jurídico</NavLink>
+
+            {/* REPORTES */}
+            <NavLink to="/reportes">Reportes</NavLink>
           </div>
         </div>
       </nav>

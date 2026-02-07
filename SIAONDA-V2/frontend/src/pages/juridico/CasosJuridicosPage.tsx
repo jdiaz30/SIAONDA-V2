@@ -1,9 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { listarCasosJuridicos, CasoJuridico } from '../../services/juridicoService';
+import { usePermissions } from '../../hooks/usePermissions';
+import NoAccess from '../../components/common/NoAccess';
 
 export default function CasosJuridicosPage() {
   const navigate = useNavigate();
+  const { canAccessModule } = usePermissions();
+
+  // Verificar acceso al módulo JURIDICO
+  if (!canAccessModule('JURIDICO')) {
+    return (
+      <div className="p-8">
+        <NoAccess message="No tienes acceso al módulo Jurídico. Esta área es solo para personal del área legal." />
+      </div>
+    );
+  }
   const [casos, setCasos] = useState<CasoJuridico[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);

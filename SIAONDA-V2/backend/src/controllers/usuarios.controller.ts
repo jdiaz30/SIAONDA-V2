@@ -22,6 +22,10 @@ const cambiarContrasenaSchema = z.object({
   contrasenaNueva: z.string().min(6)
 });
 
+const restablecerContrasenaSchema = z.object({
+  contrasenaTemporal: z.string().min(6).optional()
+});
+
 export const getUsuarios = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 20;
@@ -255,11 +259,56 @@ export const cambiarContrasena = asyncHandler(async (req: AuthRequest, res: Resp
   // Hash nueva contraseña
   const nuevaHash = await hashPassword(contrasenaNueva);
 
-  // Actualizar
+  // Actualizar y quitar flag de cambio requerido
   await prisma.usuario.update({
     where: { id: req.usuario.id },
-    data: { contrasena: nuevaHash }
+    data: {
+      contrasena: nuevaHash,
+      requiereCambioContrasena: false
+    }
   });
 
   res.json({ message: 'Contraseña actualizada exitosamente' });
+});
+
+export const restablecerContrasena = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { contrasenaTemporal } = restablecerContrasenaSchema.parse(req.body);
+
+  // Verificar que el usuario existe
+  const usuario = await prisma.usuario.findUnique({
+    where: { id }
+  });
+
+  if (!usuario) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
+
+  // Usar contraseña temporal proporcionada o la por defecto
+  const nuevaContrasena = contrasenaTemporal || 'ONDA2026';
+
+  // Hash de la nueva contraseña
+  const contrasenaHash = await hashPassword(nuevaContrasena);
+
+  // Actualizar contraseña y marcar que requiere cambio
+  await prisma.usuario.update({
+    where: { id },
+    data: {
+      contrasena: contrasenaHash,
+      requiereCambioContrasena: true
+    }
+  });
+
+  res.json({
+    message: 'Contraseña restablecida exitosamente',
+    contrasenaTemporal: nuevaContrasena
+  });
+});
+
+export const getTiposUsuario = asyncHandler(async (req: Request, res: Response) => {
+  const tipos = await prisma.usuarioTipo.findMany({
+    orderBy: { nombre: 'asc' }
+  });
+
+  res.json(tipos);
 });

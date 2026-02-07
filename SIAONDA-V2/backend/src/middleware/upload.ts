@@ -80,7 +80,7 @@ export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB máximo por archivo
+    fileSize: 50 * 1024 * 1024, // 50MB máximo por archivo
     files: 10 // Máximo 10 archivos por request
   }
 });
@@ -90,7 +90,7 @@ export const handleMulterError = (err: any, req: any, res: any, next: any) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
-        error: 'Archivo muy grande. Tamaño máximo: 10MB'
+        error: 'Archivo muy grande. Tamaño máximo: 50MB'
       });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {

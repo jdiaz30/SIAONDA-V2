@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   obtenerSolicitudPorId,
-  validarSolicitud,
+  aprobarRevision,
+  devolverSolicitud,
   asentarSolicitud,
   generarCertificado,
+  firmarCertificado,
+  subirCertificadoFirmado,
   entregarCertificado,
   SolicitudRegistro
 } from '../../services/inspectoriaService';
@@ -22,8 +25,10 @@ export default function SolicitudWorkflowPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   // Form states for each step
-  const [numeroAsiento, setNumeroAsiento] = useState('');
-  const [libroAsiento, setLibroAsiento] = useState('');
+  const [numeroLibro, setNumeroLibro] = useState('');
+  const [numeroHoja, setNumeroHoja] = useState('');
+  const [motivoDevolucion, setMotivoDevolucion] = useState('');
+  const [archivoPDF, setArchivoPDF] = useState<File | null>(null);
 
   useEffect(() => {
     cargarSolicitud();
@@ -41,10 +46,10 @@ export default function SolicitudWorkflowPage() {
     }
   };
 
-  const handleValidar = async () => {
+  const handleAprobarRevision = async () => {
     if (!solicitud) return;
 
-    if (!window.confirm('¿Confirma que desea validar esta solicitud y generar la factura?')) {
+    if (!window.confirm('¿Confirma que desea aprobar la revisión de esta solicitud?')) {
       return;
     }
 
@@ -53,13 +58,41 @@ export default function SolicitudWorkflowPage() {
       setError(null);
       setSuccess(null);
 
-      await validarSolicitud(solicitud.id!, solicitud.empresa!.categoriaIrcId);
-      setSuccess('Solicitud validada exitosamente. Factura generada y enviada a Caja.');
+      await aprobarRevision(solicitud.id!);
+      setSuccess('Revisión aprobada exitosamente. Lista para asentamiento.');
 
-      // Recargar datos
       await cargarSolicitud();
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al validar la solicitud');
+      setError(err.response?.data?.message || 'Error al aprobar revisión');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleDevolver = async () => {
+    if (!solicitud) return;
+
+    if (!motivoDevolucion || motivoDevolucion.trim().length === 0) {
+      setError('Debe especificar el motivo de la devolución');
+      return;
+    }
+
+    if (!window.confirm('¿Confirma que desea devolver esta solicitud a AuU?')) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setError(null);
+      setSuccess(null);
+
+      await devolverSolicitud(solicitud.id!, motivoDevolucion);
+      setSuccess('Solicitud devuelta a AuU para correcciones.');
+
+      setMotivoDevolucion('');
+      await cargarSolicitud();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Error al devolver solicitud');
     } finally {
       setProcessing(false);
     }
@@ -69,8 +102,8 @@ export default function SolicitudWorkflowPage() {
     e.preventDefault();
     if (!solicitud) return;
 
-    if (!numeroAsiento || !libroAsiento) {
-      setError('Debe ingresar el número de asiento y el libro');
+    if (!numeroLibro || !numeroHoja) {
+      setError('Debe ingresar el número de libro y número de hoja');
       return;
     }
 
@@ -80,14 +113,14 @@ export default function SolicitudWorkflowPage() {
       setSuccess(null);
 
       await asentarSolicitud(solicitud.id!, {
-        numeroAsiento,
-        libroAsiento
+        numeroLibro,
+        numeroHoja
       });
       setSuccess('Solicitud asentada exitosamente en el libro físico.');
 
       // Limpiar form
-      setNumeroAsiento('');
-      setLibroAsiento('');
+      setNumeroLibro('');
+      setNumeroHoja('');
 
       // Recargar datos
       await cargarSolicitud();
@@ -117,6 +150,58 @@ export default function SolicitudWorkflowPage() {
       await cargarSolicitud();
     } catch (err: any) {
       setError(err.response?.data?.message || 'Error al generar el certificado');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleFirmarCertificado = async () => {
+    if (!solicitud) return;
+
+    if (!window.confirm('¿Confirma que el certificado ha sido firmado digitalmente?')) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setError(null);
+      setSuccess(null);
+
+      await firmarCertificado(solicitud.id!);
+      setSuccess('Certificado marcado como firmado. Ahora debe cargar el PDF firmado.');
+
+      await cargarSolicitud();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Error al firmar certificado');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSubirPDFFirmado = async () => {
+    if (!solicitud) return;
+
+    if (!archivoPDF) {
+      setError('Debe seleccionar el archivo PDF firmado');
+      return;
+    }
+
+    if (!window.confirm('¿Confirma que desea subir el certificado firmado?')) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setError(null);
+      setSuccess(null);
+
+      await subirCertificadoFirmado(solicitud.id!, archivoPDF);
+      setSuccess('Certificado firmado cargado exitosamente. Listo para entrega.');
+
+      setArchivoPDF(null);
+      await cargarSolicitud();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Error al subir certificado');
     } finally {
       setProcessing(false);
     }
@@ -165,17 +250,23 @@ export default function SolicitudWorkflowPage() {
     const currentOrder = solicitud.estado?.orden || 1;
     if (stepOrder !== currentOrder) return false;
 
-    // PASO 2: Solo Inspectoría puede validar
-    if (stepOrder === 2) return usuario.tipo === 'Administrador'; // TODO: agregar rol Inspectoría
+    // PASO 3: Solo Inspectoría puede aprobar revisión
+    if (stepOrder === 3) return usuario.tipo === 'Administrador';
 
-    // PASO 4: Solo Paralegal puede asentar
-    if (stepOrder === 4) return usuario.tipo === 'Administrador'; // TODO: agregar rol Paralegal
-
-    // PASO 5: Cualquiera del departamento puede generar certificado
+    // PASO 5: Solo Paralegal puede asentar
     if (stepOrder === 5) return usuario.tipo === 'Administrador';
 
-    // PASO 7: Solo AuU puede entregar
-    if (stepOrder === 7) return usuario.tipo === 'Administrador'; // TODO: AuU es quien recibe en Formularios
+    // PASO 6: Cualquiera puede generar certificado
+    if (stepOrder === 6) return usuario.tipo === 'Administrador';
+
+    // PASO 7: Solo Registro puede firmar
+    if (stepOrder === 7) return usuario.tipo === 'Administrador';
+
+    // PASO 8: Registro/Paralegal pueden subir PDF
+    if (stepOrder === 8) return usuario.tipo === 'Administrador';
+
+    // PASO 9: Solo AuU puede entregar
+    if (stepOrder === 9) return usuario.tipo === 'Administrador';
 
     return false;
   };
@@ -197,13 +288,14 @@ export default function SolicitudWorkflowPage() {
   }
 
   const steps = [
-    { order: 1, name: 'Recepción (AuU)', field: 'fechaRecepcion', user: solicitud.recibidoPorId },
-    { order: 2, name: 'Validación (Inspectoría)', field: 'fechaValidacion', user: solicitud.validadoPorId },
-    { order: 3, name: 'Pago (Caja)', field: 'fechaPago', user: null },
-    { order: 4, name: 'Asentamiento (Paralegal)', field: 'fechaAsentamiento', user: solicitud.asentadoPorId },
-    { order: 5, name: 'Certificado Generado', field: null, user: null },
-    { order: 6, name: 'Firma (Registro)', field: 'fechaFirma', user: solicitud.firmadoPorId },
-    { order: 7, name: 'Entrega (AuU)', field: 'fechaEntrega', user: solicitud.entregadoPorId }
+    { order: 1, name: 'Recepción', field: 'fechaRecepcion', user: solicitud.recibidoPorId },
+    { order: 2, name: 'Pago', field: 'fechaPago', user: null },
+    { order: 3, name: 'Revisión', field: 'fechaValidacion', user: solicitud.validadoPorId },
+    { order: 5, name: 'Asentamiento', field: 'fechaAsentamiento', user: solicitud.asentadoPorId },
+    { order: 6, name: 'Cert. Generado', field: null, user: null },
+    { order: 7, name: 'Firmado', field: 'fechaFirma', user: solicitud.firmadoPorId },
+    { order: 8, name: 'PDF Cargado', field: null, user: null },
+    { order: 9, name: 'Entrega', field: 'fechaEntrega', user: solicitud.entregadoPorId }
   ];
 
   return (
@@ -259,7 +351,7 @@ export default function SolicitudWorkflowPage() {
           <div
             className="absolute top-5 left-0 h-0.5 bg-blue-500 transition-all duration-500"
             style={{
-              width: `${((solicitud.estado?.orden || 1) - 1) / 6 * 100}%`,
+              width: `${((solicitud.estado?.orden || 1) - 1) / 8 * 100}%`,
               zIndex: 0
             }}
           ></div>
@@ -306,7 +398,7 @@ export default function SolicitudWorkflowPage() {
             </svg>
             <div>
               <div className="font-semibold text-blue-900">Estado Actual: {solicitud.estado?.nombre}</div>
-              <div className="text-sm text-blue-700">Paso {solicitud.estado?.orden} de 7</div>
+              <div className="text-sm text-blue-700">Paso {solicitud.estado?.orden} de 9</div>
             </div>
           </div>
         </div>
@@ -394,32 +486,8 @@ export default function SolicitudWorkflowPage() {
 
       {/* Action Forms based on current step */}
 
-      {/* PASO 2: Validación (Inspectoría) */}
-      {solicitud.estado?.orden === 2 && canUserProcessStep(2) && (
-        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-blue-500">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Acción Requerida: Validar Solicitud
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Revise los documentos de la empresa y valide esta solicitud. Al validar se generará automáticamente
-            la factura por RD$ {((solicitud.empresa?.categoriaIrc?.precio || 0) * 1.18).toLocaleString('es-DO')}
-            (incluye 18% ITBIS) y se enviará al módulo de Caja para procesamiento del pago.
-          </p>
-          <button
-            onClick={handleValidar}
-            disabled={processing}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            {processing && (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-            )}
-            Validar y Generar Factura
-          </button>
-        </div>
-      )}
-
-      {/* PASO 3: Esperando Pago */}
-      {solicitud.estado?.orden === 3 && (
+      {/* PASO 2: Esperando Pago */}
+      {solicitud.estado?.orden === 1 && (
         <div className="bg-white rounded-lg shadow-md p-6 border-2 border-yellow-500">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Esperando Pago en Caja
@@ -437,8 +505,52 @@ export default function SolicitudWorkflowPage() {
         </div>
       )}
 
-      {/* PASO 4: Asentamiento (Paralegal) */}
-      {solicitud.estado?.orden === 4 && canUserProcessStep(4) && (
+      {/* PASO 3: Aprobar Revisión / Devolver (Inspectoría) */}
+      {solicitud.estado?.orden === 2 && canUserProcessStep(3) && (
+        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-blue-500">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Paso 3: Revisión de Documentación (Inspectoría)
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Revise la documentación de la solicitud. Puede aprobarla para continuar con el asentamiento o devolverla a AuU si hay errores.
+          </p>
+
+          <div className="space-y-4">
+            {/* Botón Aprobar */}
+            <button
+              onClick={handleAprobarRevision}
+              disabled={processing}
+              className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processing ? 'Procesando...' : '✓ Aprobar Revisión'}
+            </button>
+
+            {/* Formulario Devolver */}
+            <div className="border-t pt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Devolver a AuU (Especifique el motivo)
+              </label>
+              <textarea
+                value={motivoDevolucion}
+                onChange={(e) => setMotivoDevolucion(e.target.value)}
+                rows={3}
+                placeholder="Ej: Falta documento de constitución, RNC inválido..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-2"
+              />
+              <button
+                onClick={handleDevolver}
+                disabled={processing || !motivoDevolucion.trim()}
+                className="w-full px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {processing ? 'Procesando...' : '← Devolver a AuU'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PASO 5: Asentamiento (Paralegal) */}
+      {solicitud.estado?.orden === 3 && canUserProcessStep(5) && (
         <div className="bg-white rounded-lg shadow-md p-6 border-2 border-blue-500">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Acción Requerida: Asentar en Libro Físico
@@ -450,26 +562,26 @@ export default function SolicitudWorkflowPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Número de Asiento <span className="text-red-500">*</span>
+                  Número de Libro <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={numeroAsiento}
-                  onChange={(e) => setNumeroAsiento(e.target.value)}
-                  placeholder="Ej: 2025-0001"
+                  value={numeroLibro}
+                  onChange={(e) => setNumeroLibro(e.target.value)}
+                  placeholder="Ej: Libro I"
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Libro <span className="text-red-500">*</span>
+                  Número de Hoja <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={libroAsiento}
-                  onChange={(e) => setLibroAsiento(e.target.value)}
-                  placeholder="Ej: Libro I - Tomo 5"
+                  value={numeroHoja}
+                  onChange={(e) => setNumeroHoja(e.target.value)}
+                  placeholder="Ej: 42"
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -489,8 +601,8 @@ export default function SolicitudWorkflowPage() {
         </div>
       )}
 
-      {/* PASO 5: Generar Certificado */}
-      {solicitud.estado?.orden === 5 && canUserProcessStep(5) && (
+      {/* PASO 6: Generar Certificado */}
+      {solicitud.estado?.id === 5 && !solicitud.certificadoId && canUserProcessStep(6) && (
         <div className="bg-white rounded-lg shadow-md p-6 border-2 border-blue-500">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Acción Requerida: Generar Certificado
@@ -512,27 +624,96 @@ export default function SolicitudWorkflowPage() {
         </div>
       )}
 
-      {/* PASO 6: Esperando Firma */}
-      {solicitud.estado?.orden === 6 && (
-        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-green-500">
+      {/* Botón para regenerar certificado si ya existe */}
+      {solicitud.estado?.id === 5 && solicitud.certificadoId && canUserProcessStep(6) && (
+        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-yellow-500">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            Esperando Firma del Departamento de Registro
+            Certificado ya generado
           </h2>
           <p className="text-gray-600 mb-4">
-            El certificado ha sido generado y enviado al Departamento de Registro para su firma digital
-            en el portal GOB.DO. El sistema actualizará automáticamente cuando el certificado sea firmado.
+            El certificado ya fue generado. Puede regenerarlo si es necesario.
           </p>
-          <div className="flex items-center gap-2 text-green-700">
-            <svg className="w-5 h-5 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-            </svg>
-            <span className="font-medium">Esperando firma digital...</span>
+          <button
+            onClick={handleGenerarCertificado}
+            disabled={processing}
+            className="px-6 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {processing && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+            )}
+            Regenerar Certificado PDF
+          </button>
+        </div>
+      )}
+
+      {/* PASO 7: Firmar Certificado (Registro) */}
+      {solicitud.estado?.orden === 6 && canUserProcessStep(7) && (
+        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-blue-500">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Paso 7: Firmar Certificado Digitalmente (Registro)
+          </h2>
+          <p className="text-gray-600 mb-4">
+            El certificado ha sido generado. Marque como firmado después de firmar digitalmente.
+          </p>
+          <button
+            onClick={handleFirmarCertificado}
+            disabled={processing}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {processing && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+            )}
+            Marcar como Firmado
+          </button>
+        </div>
+      )}
+
+      {/* PASO 8: Subir PDF Firmado */}
+      {solicitud.estado?.orden === 7 && canUserProcessStep(8) && (
+        <div className="bg-white rounded-lg shadow-md p-6 border-2 border-blue-500">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Paso 8: Cargar Certificado Firmado (Registro/Paralegal)
+          </h2>
+          <p className="text-sm text-gray-600 mb-4">
+            El certificado ha sido firmado digitalmente. Ahora debe cargar el archivo PDF firmado al sistema.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Archivo PDF Firmado
+              </label>
+              <input
+                type="file"
+                accept=".pdf"
+                onChange={(e) => setArchivoPDF(e.target.files?.[0] || null)}
+                className="block w-full text-sm text-gray-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-lg file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-blue-50 file:text-blue-700
+                  hover:file:bg-blue-100"
+              />
+              {archivoPDF && (
+                <p className="mt-2 text-sm text-gray-600">
+                  Archivo seleccionado: {archivoPDF.name}
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={handleSubirPDFFirmado}
+              disabled={processing || !archivoPDF}
+              className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processing ? 'Subiendo...' : '↑ Cargar Certificado Firmado'}
+            </button>
           </div>
         </div>
       )}
 
-      {/* PASO 7: Entrega (AuU) */}
-      {solicitud.estado?.orden === 7 && canUserProcessStep(7) && (
+      {/* PASO 9: Entrega (AuU) */}
+      {solicitud.estado?.orden === 8 && canUserProcessStep(9) && (
         <div className="bg-white rounded-lg shadow-md p-6 border-2 border-green-500">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Acción Requerida: Entregar Certificado al Cliente
@@ -555,7 +736,7 @@ export default function SolicitudWorkflowPage() {
       )}
 
       {/* Completed */}
-      {solicitud.estado?.orden && solicitud.estado.orden > 7 && (
+      {solicitud.estado?.orden && solicitud.estado.orden > 8 && (
         <div className="bg-white rounded-lg shadow-md p-6 border-2 border-green-500">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">

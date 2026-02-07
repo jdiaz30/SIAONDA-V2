@@ -97,7 +97,7 @@ export const generarCertificadoIRCPDF = async (
       doc
         .fontSize(14)
         .font('Times-Bold')
-        .text('CERTIFICACIÓN DE INSCRIPCIÓN', { align: 'center' });
+        .text('CERTIFICADO DE REGISTRO', { align: 'center' });
 
       doc.moveDown(1);
 

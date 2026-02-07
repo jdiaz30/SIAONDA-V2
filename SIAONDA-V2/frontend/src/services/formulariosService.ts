@@ -199,22 +199,37 @@ export const formulariosService = {
   },
 
   /**
-   * Crear un formulario de registro de obra (nuevo flujo simplificado)
+   * Crear un formulario de registro de obra (nuevo flujo simplificado - solo campos dinámicos)
    */
   createFormularioObra: async (data: {
     autores: Array<{ clienteId: number; rol: string }>;
     productoId: number;
     datosObra: {
-      titulo: string;
-      subtitulo?: string;
-      anioCreacion: number;
-      descripcion?: string;
-      paisOrigen: string;
-      camposEspecificos?: Record<string, any>;
+      camposEspecificos: Record<string, any>;
     };
   }): Promise<Formulario> => {
     const response = await api.post('/formularios/obras', data);
     return response.data.formulario;
+  },
+
+  /**
+   * Crear un formulario con MÚLTIPLES obras (sistema de carrito)
+   */
+  createFormularioObrasMultiple: async (data: {
+    autores: Array<{ clienteId: number; rol: string }>;
+    obras: Array<{
+      productoId: number;
+      datosObra: {
+        camposEspecificos: Record<string, any>;
+      };
+    }>;
+  }): Promise<{
+    formulario: Formulario;
+    totalObras: number;
+    montoTotal: number;
+  }> => {
+    const response = await api.post('/formularios/obras-multiple', data);
+    return response.data;
   },
 
   /**
@@ -260,18 +275,23 @@ export const formulariosService = {
   /**
    * Subir múltiples archivos a un formulario
    */
-  uploadArchivos: async (formularioId: number, archivos: File[]): Promise<FormularioArchivo[]> => {
+  uploadArchivos: async (formularioId: number, archivos: File[], formularioProductoId?: number): Promise<FormularioArchivo[]> => {
     const formData = new FormData();
     archivos.forEach((archivo) => {
       formData.append('archivos', archivo);
     });
+
+    // Agregar formularioProductoId si se proporciona
+    if (formularioProductoId) {
+      formData.append('formularioProductoId', formularioProductoId.toString());
+    }
 
     const response = await api.post(`/formularios/${formularioId}/archivos`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response.data;
+    return response.data.archivos || response.data;
   },
 
   /**

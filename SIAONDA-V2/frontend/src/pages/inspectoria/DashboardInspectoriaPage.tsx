@@ -1,8 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { obtenerDashboard, DashboardData } from '../../services/inspectoriaService';
+import { usePermissions } from '../../hooks/usePermissions';
+import NoAccess from '../../components/common/NoAccess';
 
 export default function DashboardInspectoriaPage() {
+  const { canAccessModule } = usePermissions();
+
+  // Verificar acceso al módulo INSPECTORIA
+  if (!canAccessModule('INSPECTORIA')) {
+    return (
+      <div className="p-8">
+        <NoAccess message="No tienes acceso al módulo de Inspectoría. Esta área es solo para personal de Inspectoría." />
+      </div>
+    );
+  }
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -209,6 +221,47 @@ export default function DashboardInspectoriaPage() {
             <p className="text-3xl font-bold text-orange-900">{dashboard.casosPendientes.paraSegundaVisita}</p>
             <p className="text-sm text-orange-600 mt-1">Plazo vencido</p>
           </div>
+        </div>
+      </div>
+
+      {/* Alertas de Vigencia */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Vigencia de Inscripciones IRC
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Link to="/inspectoria/empresas?filtro=vencidas" className="bg-red-50 border-2 border-red-300 rounded-lg p-6 hover:bg-red-100 transition-colors group">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-red-800 mb-1">Empresas Vencidas</p>
+                <p className="text-4xl font-bold text-red-900">{dashboard.alertasRenovacion.vencidas}</p>
+                <p className="text-sm text-red-600 mt-2">⚠️ Requieren renovación urgente</p>
+              </div>
+              <div className="text-red-300 group-hover:text-red-400 group-hover:scale-110 transition-transform">
+                <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </Link>
+
+          <Link to="/inspectoria/empresas?filtro=porVencer" className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6 hover:bg-yellow-100 transition-colors group">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-yellow-800 mb-1">Por Vencer (30 días)</p>
+                <p className="text-4xl font-bold text-yellow-900">{dashboard.alertasRenovacion.porVencer30Dias}</p>
+                <p className="text-sm text-yellow-600 mt-2">⏰ Próximas a vencer</p>
+              </div>
+              <div className="text-yellow-300 group-hover:text-yellow-400 group-hover:scale-110 transition-transform">
+                <svg className="w-16 h-16" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </Link>
         </div>
       </div>
 

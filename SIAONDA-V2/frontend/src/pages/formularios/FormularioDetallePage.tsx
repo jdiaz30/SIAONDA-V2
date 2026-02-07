@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../../services/api';
 
 interface Formulario {
@@ -12,6 +12,13 @@ interface Formulario {
   usuario: {
     nombrecompleto: string;
   };
+  clientes?: Array<{
+    cliente: {
+      nombrecompleto: string;
+      identificacion: string;
+    };
+    tipoRelacion: string;
+  }>;
   productos: Array<{
     producto: {
       codigo: string;
@@ -50,9 +57,13 @@ interface Formulario {
 const FormularioDetallePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [formulario, setFormulario] = useState<Formulario | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Detectar si viene de /aau/formularios o /formularios
+  const isFromAau = location.pathname.startsWith('/aau/');
 
   useEffect(() => {
     cargarFormulario();
@@ -92,8 +103,11 @@ const FormularioDetallePage = () => {
     );
   }
 
+  // Detectar tipo de formulario
+  const esFormularioIRC = formulario.solicitudIrc !== null && formulario.solicitudIrc !== undefined;
   const productoIrc = formulario.productos.find(p => p.producto.codigo === 'IRC-01');
-  const campos = productoIrc?.campos || [];
+  const primerProducto = formulario.productos[0];
+  const campos = esFormularioIRC ? (productoIrc?.campos || []) : (primerProducto?.campos || []);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -101,7 +115,7 @@ const FormularioDetallePage = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate('/formularios')}
+            onClick={() => navigate(isFromAau ? '/aau/formularios' : '/formularios')}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             ← Volver
@@ -110,7 +124,9 @@ const FormularioDetallePage = () => {
             <h1 className="text-2xl font-bold text-gray-900">
               Formulario {formulario.codigo}
             </h1>
-            <p className="text-gray-600">Detalles del formulario IRC</p>
+            <p className="text-gray-600">
+              {esFormularioIRC ? 'Detalles del formulario IRC' : 'Detalles del formulario de Registro de Obra'}
+            </p>
           </div>
         </div>
 
@@ -130,7 +146,7 @@ const FormularioDetallePage = () => {
       {/* Información General */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          📄 Información General
+          Información General
         </h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -147,8 +163,19 @@ const FormularioDetallePage = () => {
           </div>
           <div>
             <p className="text-sm text-gray-600">Tipo</p>
-            <p className="font-medium">{productoIrc?.producto.nombre}</p>
+            <p className="font-medium">
+              {esFormularioIRC
+                ? (productoIrc?.producto.nombre || 'Solicitud IRC')
+                : (primerProducto?.producto.nombre || 'Registro de Obra')
+              }
+            </p>
           </div>
+          {!esFormularioIRC && primerProducto && (
+            <div className="col-span-2">
+              <p className="text-sm text-gray-600">Categoría</p>
+              <p className="font-medium">{primerProducto.producto.codigo}</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -209,11 +236,34 @@ const FormularioDetallePage = () => {
         </div>
       )}
 
-      {/* Datos de la Empresa */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          🏢 Datos de la Empresa
-        </h2>
+      {/* Autores/Clientes (solo para formularios de obras) */}
+      {!esFormularioIRC && formulario.clientes && formulario.clientes.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Autores y Titulares
+          </h2>
+          <div className="space-y-3">
+            {formulario.clientes.map((rel, index) => (
+              <div key={index} className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">{rel.cliente.nombrecompleto}</p>
+                  <p className="text-sm text-gray-600 mt-1">Cédula: {rel.cliente.identificacion}</p>
+                </div>
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
+                  {rel.tipoRelacion}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Datos de la Empresa (solo para IRC) */}
+      {esFormularioIRC && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Datos de la Empresa
+          </h2>
         <div className="grid grid-cols-2 gap-6">
           <div>
             <p className="text-sm text-gray-600 mb-1">Nombre de la Empresa</p>
@@ -240,60 +290,65 @@ const FormularioDetallePage = () => {
             <p className="font-medium">{getCampoValor(campos, 'fechaInicioOperaciones')}</p>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
-      {/* Ubicación y Contacto */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          📍 Ubicación y Contacto
-        </h2>
-        <div className="grid grid-cols-2 gap-6">
-          <div className="col-span-2">
-            <p className="text-sm text-gray-600 mb-1">Dirección</p>
-            <p className="font-medium">{getCampoValor(campos, 'direccion')}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Provincia</p>
-            <p className="font-medium">{getCampoValor(campos, 'provincia')}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Sector</p>
-            <p className="font-medium">{getCampoValor(campos, 'sector')}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">📞 Teléfono</p>
-            <p className="font-medium">{getCampoValor(campos, 'telefono')}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">📞 Teléfono Secundario</p>
-            <p className="font-medium">{getCampoValor(campos, 'telefonoSecundario')}</p>
-          </div>
-          <div className="col-span-2">
-            <p className="text-sm text-gray-600 mb-1">✉️ Correo Electrónico</p>
-            <p className="font-medium">{getCampoValor(campos, 'email')}</p>
+      {/* Ubicación y Contacto - Solo IRC */}
+      {esFormularioIRC && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Ubicación y Contacto
+          </h2>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="col-span-2">
+              <p className="text-sm text-gray-600 mb-1">Dirección</p>
+              <p className="font-medium">{getCampoValor(campos, 'direccion')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Provincia</p>
+              <p className="font-medium">{getCampoValor(campos, 'provincia')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Sector</p>
+              <p className="font-medium">{getCampoValor(campos, 'sector')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Teléfono</p>
+              <p className="font-medium">{getCampoValor(campos, 'telefono')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Teléfono Secundario</p>
+              <p className="font-medium">{getCampoValor(campos, 'telefonoSecundario')}</p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-sm text-gray-600 mb-1">Correo Electrónico</p>
+              <p className="font-medium">{getCampoValor(campos, 'email')}</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Representante Legal */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
-          👤 Representante Legal
-        </h2>
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Nombre</p>
-            <p className="font-medium">{getCampoValor(campos, 'representanteLegal')}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 mb-1">Cédula</p>
-            <p className="font-medium">{getCampoValor(campos, 'cedulaRepresentante')}</p>
+      {/* Representante Legal - Solo IRC */}
+      {esFormularioIRC && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            👤 Representante Legal
+          </h2>
+          <div className="grid grid-cols-2 gap-6">
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Nombre</p>
+              <p className="font-medium">{getCampoValor(campos, 'representanteLegal')}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600 mb-1">Cédula</p>
+              <p className="font-medium">{getCampoValor(campos, 'cedulaRepresentante')}</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Descripción de Actividades */}
-      {getCampoValor(campos, 'descripcionActividades') !== 'N/A' && (
+      {/* Descripción de Actividades - Solo IRC */}
+      {esFormularioIRC && getCampoValor(campos, 'descripcionActividades') !== 'N/A' && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">
             Descripción de Actividades
@@ -301,6 +356,23 @@ const FormularioDetallePage = () => {
           <p className="text-gray-700 whitespace-pre-wrap">
             {getCampoValor(campos, 'descripcionActividades')}
           </p>
+        </div>
+      )}
+
+      {/* Campos del Formulario - Solo Obras */}
+      {!esFormularioIRC && campos.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            Detalles de la Obra
+          </h2>
+          <div className="grid grid-cols-2 gap-6">
+            {campos.map((campo, index) => (
+              <div key={index}>
+                <p className="text-sm text-gray-600 mb-1">{campo.campo.titulo}</p>
+                <p className="font-medium">{campo.valor || 'N/A'}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

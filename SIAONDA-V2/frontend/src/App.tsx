@@ -30,7 +30,6 @@ import CasoFormPage from './pages/inspectoria/CasoFormPage';
 import CasoDetailPage from './pages/inspectoria/CasoDetailPage';
 import RegistrosAsentamientoPage from './pages/inspectoria/RegistrosAsentamientoPage';
 import CertificadosPendientesInspectoriaPage from './pages/inspectoria/CertificadosPendientesPage';
-import CertificadosPendientesPage from './pages/CertificadosPendientesPage';
 
 import ViajesOficioPage from './pages/inspectoria/ViajesOficioPage';
 import ViajeOficioFormPage from './pages/inspectoria/ViajeOficioFormPage';
@@ -42,7 +41,25 @@ import CasosJuridicosPage from './pages/juridico/CasosJuridicosPage';
 import DashboardAauPage from './pages/aau/DashboardAauPage';
 import FormulariosListPage from './pages/aau/FormulariosListPage';
 import FormulariosDevueltosPage from './pages/aau/FormulariosDevueltosPage';
+import FormularioObraDetallePage from './pages/aau/FormularioObraDetallePage';
+import FormularioObraEditPage from './pages/aau/FormularioObraEditPage';
 import NuevoRegistroObraPage from './pages/aau/NuevoRegistroObraPage';
+import DashboardRegistroPage2 from './pages/registro/DashboardRegistroPage';
+import ObrasPendientesPage from './pages/registro/ObrasPendientesPage';
+import HistorialRegistroPage from './pages/registro/HistorialRegistroPage';
+import CertificadosGestionPage from './pages/registro/CertificadosGestionPage';
+import RegistroDetallePage from './pages/registro/RegistroDetallePage';
+import FormularioIRCPageAau from './pages/aau/FormularioIRCPage';
+import CorregirSolicitudIRCPage from './pages/aau/CorregirSolicitudIRCPage';
+import CertificadosListosEntregaPage from './pages/aau/CertificadosListosEntregaPage';
+import HistorialEntregasPage from './pages/aau/HistorialEntregasPage';
+import DenunciasPage from './pages/aau/DenunciasPage';
+import DenunciaFormPage from './pages/aau/DenunciaFormPage';
+import DenunciaDetailPage from './pages/aau/DenunciaDetailPage';
+import CajasDenunciasPage from './pages/cajas/DenunciasPage';
+import CobrosPendientesPage from './pages/cajas/CobrosPendientesPage';
+import GestionNCFPage from './pages/cajas/GestionNCFPage';
+import ReportesPage from './pages/ReportesPage';
 import MainLayout from './layouts/MainLayout';
 
 function App() {
@@ -57,12 +74,20 @@ function App() {
           <Route element={<MainLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/" element={<Navigate to="/dashboard" />} />
-            <Route path="/registro" element={<DashboardRegistroPage />} />
+
+            {/* Rutas del Módulo de Registro de Obras */}
+            <Route path="/registro" element={<DashboardRegistroPage2 />} />
+            <Route path="/registro/pendientes" element={<ObrasPendientesPage />} />
+            <Route path="/registro/certificados" element={<CertificadosGestionPage />} />
+            <Route path="/registro/historial" element={<HistorialRegistroPage />} />
+            <Route path="/registro/:id" element={<RegistroDetallePage />} />
             <Route path="/usuarios" element={<UsuariosPage />} />
             <Route path="/clientes" element={<ClientesPage />} />
             <Route path="/clientes/nuevo" element={<ClienteFormPage />} />
             <Route path="/clientes/:id" element={<ClienteDetailPage />} />
             <Route path="/clientes/:id/editar" element={<ClienteFormPage />} />
+
+            {/* Rutas antiguas de formularios - Restringido solo a ADMINISTRADOR */}
             <Route path="/formularios" element={<FormulariosPage />} />
             <Route path="/formularios/nuevo" element={<FormularioFormPage />} />
             <Route path="/formularios/irc/nuevo" element={<FormularioIRCPage />} />
@@ -70,10 +95,13 @@ function App() {
             <Route path="/formularios/:id" element={<FormularioDetallePage />} />
             <Route path="/formularios/:id/editar" element={<FormularioFormPage />} />
             <Route path="/certificados" element={<CertificadosPage />} />
-            <Route path="/facturas" element={<FacturasPage />} />
             <Route path="/cajas" element={<CajasPage />} />
             <Route path="/cajas/operaciones" element={<CajaOperacionPage />} />
+            <Route path="/cajas/cobros-pendientes" element={<CobrosPendientesPage />} />
+            <Route path="/cajas/ncf" element={<GestionNCFPage />} />
             <Route path="/cajas/solicitudes-irc" element={<SolicitudesIRCPage />} />
+            <Route path="/cajas/denuncias" element={<CajasDenunciasPage />} />
+            <Route path="/reportes" element={<ReportesPage />} />
             <Route path="/inspectoria" element={<DashboardInspectoriaPage />} />
             <Route path="/inspectoria/empresas" element={<EmpresasPage />} />
             <Route path="/inspectoria/empresas/vencidas" element={<EmpresasVencidasPage />} />
@@ -97,13 +125,21 @@ function App() {
             <Route path="/inspectoria/viajes-oficio/:viajeId/actas" element={<ActasListPage />} />
             <Route path="/inspectoria/actas-oficio/:actaId/editar" element={<ActaOficioEditPage />} />
 
-            <Route path="/certificados-pendientes" element={<CertificadosPendientesPage />} />
-
             {/* Rutas de Atención al Usuario */}
             <Route path="/aau" element={<DashboardAauPage />} />
             <Route path="/aau/formularios" element={<FormulariosListPage />} />
+            <Route path="/aau/formularios/obra/:id" element={<FormularioObraDetallePage />} />
+            <Route path="/aau/formularios/:id/editar" element={<FormularioObraEditPage />} />
+            <Route path="/aau/formularios/:id" element={<FormularioDetallePage />} />
             <Route path="/aau/formularios/devueltos" element={<FormulariosDevueltosPage />} />
             <Route path="/aau/formularios/nuevo" element={<NuevoRegistroObraPage />} />
+            <Route path="/aau/formularios-irc" element={<FormularioIRCPageAau />} />
+            <Route path="/aau/solicitudes-irc/:id/corregir" element={<CorregirSolicitudIRCPage />} />
+            <Route path="/aau/certificados-entrega" element={<CertificadosListosEntregaPage />} />
+            <Route path="/aau/historial-entregas" element={<HistorialEntregasPage />} />
+            <Route path="/aau/denuncias" element={<DenunciasPage />} />
+            <Route path="/aau/denuncias/nueva" element={<DenunciaFormPage />} />
+            <Route path="/aau/denuncias/:id" element={<DenunciaDetailPage />} />
 
             {/* Rutas de Jurídico */}
             <Route path="/juridico" element={<CasosJuridicosPage />} />

@@ -61,13 +61,16 @@ export default function SolicitudesPage() {
 
   const getEstadoColor = (orden: number) => {
     const colores: Record<number, string> = {
-      1: 'bg-gray-100 text-gray-800',      // PENDIENTE
-      2: 'bg-blue-100 text-blue-800',       // VALIDADA
-      3: 'bg-green-100 text-green-800',   // PAGADA
-      4: 'bg-indigo-100 text-indigo-800',   // ASENTADA
-      5: 'bg-yellow-100 text-yellow-800',   // CERTIFICADO_GENERADO
-      6: 'bg-orange-100 text-orange-800',   // FIRMADA
-      7: 'bg-green-100 text-green-800'      // ENTREGADA
+      1: 'bg-gray-100 text-gray-800',        // PENDIENTE
+      2: 'bg-green-100 text-green-800',      // PAGADA
+      3: 'bg-blue-100 text-blue-800',        // EN_REVISION
+      4: 'bg-yellow-100 text-yellow-800',    // DEVUELTA
+      5: 'bg-indigo-100 text-indigo-800',    // ASENTADA
+      6: 'bg-purple-100 text-purple-800',    // CERTIFICADO_GENERADO
+      7: 'bg-pink-100 text-pink-800',        // FIRMADA
+      8: 'bg-orange-100 text-orange-800',    // CERTIFICADO_CARGADO
+      9: 'bg-green-100 text-green-800',      // ENTREGADA
+      99: 'bg-red-100 text-red-800'          // RECHAZADA
     };
     return colores[orden] || 'bg-gray-100 text-gray-800';
   };
@@ -162,9 +165,9 @@ export default function SolicitudesPage() {
 
       {/* Workflow Progress Legend */}
       <div className="bg-white rounded-lg shadow-md p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Flujo de Trabajo (7 Pasos)</h3>
+        <h3 className="text-sm font-semibold text-gray-700 mb-3">Flujo de Trabajo (9 Pasos)</h3>
         <div className="flex flex-wrap gap-2">
-          {catalogos?.estadosSolicitud.map((estado) => (
+          {catalogos?.estadosSolicitud.filter(e => e.orden !== 99).map((estado) => (
             <div key={estado.id} className="flex items-center gap-2">
               <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getEstadoColor(estado.orden)}`}>
                 {estado.orden}. {estado.nombre}
@@ -265,10 +268,10 @@ export default function SolicitudesPage() {
                           <div className="w-full bg-gray-200 rounded-full h-2 mr-2">
                             <div
                               className="bg-blue-600 h-2 rounded-full"
-                              style={{ width: `${((solicitud.estado?.orden || 1) / 7) * 100}%` }}
+                              style={{ width: `${((solicitud.estado?.orden || 1) / 9) * 100}%` }}
                             ></div>
                           </div>
-                          <span className="text-xs text-gray-600">{solicitud.estado?.orden}/7</span>
+                          <span className="text-xs text-gray-600">{solicitud.estado?.orden}/9</span>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

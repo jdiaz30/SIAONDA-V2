@@ -163,18 +163,19 @@ async function main() {
   }
   console.log(`✅ Created ${provincias.length} Provincias`);
 
-  // 7. ESTADOS DE SOLICITUD DE INSPECCIÓN (FLUJO PR-DI-002)
+  // 7. ESTADOS DE SOLICITUD DE INSPECCIÓN (FLUJO IRC CORREGIDO)
   console.log('📋 Seeding Estados de Solicitud de Inspección...');
 
   const estadosSolicitudInspeccion = [
-    { nombre: 'PENDIENTE', descripcion: 'Solicitud recibida, pendiente de validación', orden: 1 },
-    { nombre: 'VALIDADA', descripcion: 'Documentos validados por Inspectoría', orden: 2 },
-    { nombre: 'PAGADA', descripcion: 'Pago recibido en Caja', orden: 3 },
-    { nombre: 'ASENTADA', descripcion: 'Número de asiento introducido', orden: 4 },
-    { nombre: 'PENDIENTE_FIRMA', descripcion: 'Certificado generado, pendiente de firma', orden: 5 },
-    { nombre: 'LISTA_ENTREGA', descripcion: 'Certificado firmado, listo para entrega', orden: 6 },
-    { nombre: 'ENTREGADA', descripcion: 'Certificado entregado al cliente', orden: 7 },
-    { nombre: 'RECHAZADA', descripcion: 'Solicitud rechazada por documentación incompleta', orden: 99 },
+    { nombre: 'PENDIENTE', descripcion: 'Solicitud creada, esperando pago', orden: 1 },
+    { nombre: 'PAGADA', descripcion: 'Cliente pagó, esperando revisión', orden: 2 },
+    { nombre: 'EN_REVISION', descripcion: 'Inspectoría revisando documentación', orden: 3 },
+    { nombre: 'DEVUELTA', descripcion: 'Devuelta a AuU por error en documentación', orden: 4 },
+    { nombre: 'ASENTADA', descripcion: 'Asentada correctamente en libro de registro', orden: 5 },
+    { nombre: 'CERTIFICADO_GENERADO', descripcion: 'PDF del certificado generado', orden: 6 },
+    { nombre: 'FIRMADA', descripcion: 'Certificado firmado digitalmente', orden: 7 },
+    { nombre: 'CERTIFICADO_CARGADO', descripcion: 'PDF firmado subido al sistema', orden: 8 },
+    { nombre: 'ENTREGADA', descripcion: 'Certificado entregado al cliente', orden: 9 },
   ];
 
   for (const estado of estadosSolicitudInspeccion) {

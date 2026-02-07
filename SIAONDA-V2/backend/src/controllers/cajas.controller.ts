@@ -4,20 +4,33 @@ import { prisma } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
 import { format } from 'date-fns';
+import { generarReporteCierreCaja } from '../services/reporteCierreCaja.service';
 
 // Schema de validación para abrir caja
 const abrirCajaSchema = z.object({
   descripcion: z.string().min(1),
-  observaciones: z.string().optional()
-});
+  observaciones: z.string().optional(),
+  esGratuita: z.boolean().optional().default(false),
+  motivoGratuito: z.string().optional()
+}).refine(
+  (data) => {
+    // Si es gratuita, debe tener motivo
+    if (data.esGratuita && !data.motivoGratuito?.trim()) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "Si la caja es gratuita, debe especificar el motivo",
+    path: ["motivoGratuito"]
+  }
+);
 
-// Schema de validación para cerrar caja
-const cerrarCajaSchema = z.object({
-  montoFinal: z.number().min(0),
-  observaciones: z.string().optional()
-});
+// Schema de validación para cerrar caja (vacío - simplificado como V1)
+const cerrarCajaSchema = z.object({});
 
 // Generar código de caja: CAJA-YYYYMMDD-NNNN
+// Con protección contra race conditions en concurrencia
 const generateCodigoCaja = async (): Promise<string> => {
   const now = new Date();
   const año = now.getFullYear();
@@ -25,17 +38,36 @@ const generateCodigoCaja = async (): Promise<string> => {
   const dia = now.getDate().toString().padStart(2, '0');
   const fecha = `${año}${mes}${dia}`;
 
-  const count = await prisma.caja.count({
-    where: {
-      fecha: {
-        gte: new Date(año, now.getMonth(), now.getDate(), 0, 0, 0),
-        lt: new Date(año, now.getMonth(), now.getDate() + 1, 0, 0, 0)
+  // Retry hasta 5 veces si hay colisión
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const count = await prisma.caja.count({
+      where: {
+        fecha: {
+          gte: new Date(año, now.getMonth(), now.getDate(), 0, 0, 0),
+          lt: new Date(año, now.getMonth(), now.getDate() + 1, 0, 0, 0)
+        }
       }
-    }
-  });
+    });
 
-  const numero = (count + 1).toString().padStart(4, '0');
-  return `CAJA-${fecha}-${numero}`;
+    const numero = (count + 1 + attempt).toString().padStart(4, '0');
+    const codigo = `CAJA-${fecha}-${numero}`;
+
+    // Verificar que no exista
+    const existe = await prisma.caja.findUnique({
+      where: { codigo }
+    });
+
+    if (!existe) {
+      return codigo;
+    }
+
+    // Si existe, esperar un tiempo aleatorio antes de reintentar
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+  }
+
+  // Fallback: usar timestamp
+  const timestamp = Date.now().toString().slice(-4);
+  return `CAJA-${fecha}-${timestamp}`;
 };
 
 // GET /api/cajas
@@ -195,6 +227,8 @@ export const abrirCaja = asyncHandler(async (req: AuthRequest, res: Response) =>
         horaApertura: new Date(),
         montoInicial: 0, // Siempre inicia en 0
         observaciones: data.observaciones || null,
+        esGratuita: data.esGratuita || false,
+        motivoGratuito: data.motivoGratuito || null,
         estadoId: estadoAbierta.id,
         usuarioId: req.usuario!.id
       }
@@ -246,8 +280,6 @@ export const cerrarCaja = asyncHandler(async (req: AuthRequest, res: Response) =
     throw new AppError('No autenticado', 401);
   }
 
-  const data = cerrarCajaSchema.parse(req.body);
-
   // Verificar que la caja existe y pertenece al usuario
   const caja = await prisma.caja.findUnique({
     where: { id },
@@ -293,110 +325,75 @@ export const cerrarCaja = asyncHandler(async (req: AuthRequest, res: Response) =
     where: { nombre: 'Cerrado' }
   });
 
-  const estadoFacturaCerrada = await prisma.facturaEstado.findFirst({
-    where: { nombre: 'Cerrada' }
-  });
-
-  if (!estadoCajaCerrada || !estadoCierreCerrado || !estadoFacturaCerrada) {
+  if (!estadoCajaCerrada || !estadoCierreCerrado) {
     throw new AppError('Estados no configurados correctamente en la base de datos', 500);
   }
 
-  // Obtener todas las facturas pendientes de asociar al cierre (cierreId = 0)
-  // Según SIAONDA V1: buscarparacierre busca WHERE ID_caja = X AND ID_estado NOT IN (1) AND ID_cierre = 0
-  // Estado 1 es "Abierta", así que buscamos facturas Pagadas o Cerradas con cierreId = 0
-  const facturasParaCierre = await prisma.factura.findMany({
-    where: {
-      cajaId: id,
-      OR: [
-        { cierreId: 0 },
-        { cierreId: null }
-      ],
-      estado: {
-        nombre: {
-          notIn: ['Abierta']
-        }
-      }
-    }
-  });
-
-  // Calcular totales (montoInicial siempre es 0)
-  const totalFacturas = facturasParaCierre.reduce((sum, f) => sum + Number(f.total), 0);
-  const montoEsperado = totalFacturas; // No hay monto inicial
-  const diferencia = data.montoFinal - montoEsperado;
-
-  // Realizar operación de cierre en transacción
-  const resultado = await prisma.$transaction(async (tx) => {
-    // 1. Cerrar el registro de cierre (actualizar fecha_final y estado)
-    await tx.cierre.update({
-      where: { id: cierreActivo.id },
-      data: {
-        fechaFinal: new Date(),
-        estadoId: estadoCierreCerrado.id,
-        totalEsperado: montoEsperado,
-        totalReal: data.montoFinal,
-        diferencia
-      }
-    });
-
-    // 2. Asociar TODAS las facturas pagadas/cerradas al cierre
-    // UPDATE t_documento SET ID_cierre = X WHERE ID_caja = Y AND ID_cierre = 0
-    for (const factura of facturasParaCierre) {
-      await tx.factura.update({
-        where: { id: factura.id },
+  // Realizar operación de cierre en transacción (simplificado como en V1)
+  try {
+    const resultado = await prisma.$transaction(async (tx) => {
+      // 1. Cerrar el registro de cierre (actualizar fecha_final y estado)
+      await tx.cierre.update({
+        where: { id: cierreActivo.id },
         data: {
-          cierreId: cierreActivo.id,
-          // Si la factura está pagada, cambiar estado a "Cerrada"
-          estadoId: factura.estadoId === (await prisma.facturaEstado.findFirst({ where: { nombre: 'Pagada' } }))?.id
-            ? estadoFacturaCerrada.id
-            : factura.estadoId
+          fechaFinal: new Date(),
+          estadoId: estadoCierreCerrado.id
         }
       });
-    }
 
-    // 3. Cerrar la caja (cambiar estado a Cerrada)
-    const cajaActualizada = await tx.caja.update({
-      where: { id },
-      data: {
-        horaCierre: new Date(),
-        montoFinal: data.montoFinal,
-        totalFacturas,
-        diferencia,
-        observaciones: data.observaciones
-          ? `${caja.observaciones || ''}\nCierre: ${data.observaciones}`
-          : caja.observaciones,
-        estadoId: estadoCajaCerrada.id,
-        // Liberar usuario (según V1: UPDATE t_caja SET ID_usuario = NULL)
-        usuarioId: null
-      },
-      include: {
-        estado: true,
-        facturas: {
-          include: {
-            estado: true,
-            cliente: {
-              select: {
-                nombrecompleto: true
+      // 2. Asociar TODAS las facturas pagadas al cierre
+      // UPDATE t_documento SET ID_cierre = X WHERE ID_caja = Y AND ID_cierre = 0
+      await tx.factura.updateMany({
+        where: {
+          cajaId: id,
+          OR: [
+            { cierreId: 0 },
+            { cierreId: null }
+          ]
+        },
+        data: {
+          cierreId: cierreActivo.id
+        }
+      });
+
+      // 3. Cerrar la caja (cambiar estado a Cerrada y liberar usuario)
+      const cajaActualizada = await tx.caja.update({
+        where: { id },
+        data: {
+          horaCierre: new Date(),
+          estadoId: estadoCajaCerrada.id,
+          usuarioId: null
+        },
+        include: {
+          estado: true,
+          facturas: {
+            include: {
+              estado: true,
+              cliente: {
+                select: {
+                  nombrecompleto: true
+                }
               }
             }
           }
         }
-      }
+      });
+
+      return {
+        caja: cajaActualizada,
+        cierre: cierreActivo
+      };
     });
 
-    return {
-      caja: cajaActualizada,
-      cierre: cierreActivo,
-      facturasAsociadas: facturasParaCierre.length
-    };
-  });
-
-  res.json({
-    message: 'Caja cerrada exitosamente según flujo SIAONDA V1',
-    caja: resultado.caja,
-    cierreId: resultado.cierre.id,
-    facturasAsociadas: resultado.facturasAsociadas,
-    diferencia
-  });
+    res.json({
+      message: 'Caja cerrada exitosamente',
+      caja: resultado.caja,
+      cierreId: resultado.cierre.id
+    });
+  } catch (error) {
+    console.error('Error al cerrar caja:', error);
+    throw error;
+  }
 });
 
 // GET /api/cajas/:id/reporte
@@ -486,6 +483,18 @@ export const generarReporteCierre = asyncHandler(async (req: Request, res: Respo
   res.json(reporte);
 });
 
+// GET /api/cajas/cierre/:id/imprimir
+// Generar PDF del reporte de cierre de caja
+export const imprimirReporteCierre = asyncHandler(async (req: Request, res: Response) => {
+  const cierreId = parseInt(req.params.id);
+
+  if (!cierreId || isNaN(cierreId)) {
+    throw new AppError('ID de cierre inválido', 400);
+  }
+
+  await generarReporteCierreCaja(cierreId, res);
+});
+
 // GET /api/cajas/usuario/activa
 export const getCajaActiva = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.usuario) {
@@ -566,7 +575,8 @@ const cobrarSolicitudSchema = z.object({
   referencia: z.string().nullable().optional(),
   observaciones: z.string().nullable().optional(),
   requiereNCF: z.boolean().optional().default(false),
-  rnc: z.string().nullable().optional()
+  rnc: z.string().nullable().optional(),
+  anosVigencia: z.number().int().min(1).max(5).optional().default(1) // Años de vigencia (1-5)
 });
 
 // GET /api/cajas/solicitudes-pendientes
@@ -578,29 +588,59 @@ export const getSolicitudesPendientes = asyncHandler(async (req: Request, res: R
   const search = req.query.search as string;
   const estado = req.query.estado as string; // 'PENDIENTE' | 'PAGADA' | undefined (todas)
 
-  const where: any = {};
+  const where: any = {
+    AND: []
+  };
 
   // Filtrar por estado si se especifica
   if (estado === 'PENDIENTE') {
-    where.factura = null; // Sin factura = pendiente
-    where.estado = { nombre: 'PENDIENTE' };
+    // PENDIENTE = Sin factura (aún no cobrada) O con factura Abierta
+    // Mostrar solicitudes con estado PENDIENTE que NO tienen factura o tienen factura sin pagar
+    where.AND.push({
+      estado: { nombre: 'PENDIENTE' }
+    });
+    where.AND.push({
+      OR: [
+        { facturaId: null }, // Sin factura (nuevo flujo desde AaU)
+        {
+          factura: {
+            estado: {
+              nombre: 'Abierta' // Con factura pero no pagada (flujo antiguo)
+            }
+          }
+        }
+      ]
+    });
   } else if (estado === 'PAGADA') {
-    where.factura = { isNot: null }; // Con factura = pagada
-    where.estado = { nombre: 'PAGADA' };
+    // PAGADA = Tiene factura pagada (factura.estado = 'Pagada')
+    where.AND.push({
+      factura: {
+        estado: {
+          nombre: 'Pagada'
+        }
+      }
+    });
+    where.AND.push({
+      estado: { nombre: 'PAGADA' }
+    });
   }
-  // Si no se especifica estado, muestra todas
 
   if (search) {
-    where.OR = [
-      { codigo: { contains: search, mode: 'insensitive' } },
-      { nombreEmpresa: { contains: search, mode: 'insensitive' } },
-      { rnc: { contains: search, mode: 'insensitive' } }
-    ];
+    where.AND.push({
+      OR: [
+        { codigo: { contains: search, mode: 'insensitive' } },
+        { nombreEmpresa: { contains: search, mode: 'insensitive' } },
+        { rnc: { contains: search, mode: 'insensitive' } }
+      ]
+    });
   }
+
+  // Si no hay filtros, limpiar el AND vacío
+  const finalWhere = where.AND.length > 0 ? where : {};
 
   const [solicitudes, total] = await Promise.all([
     prisma.solicitudRegistroInspeccion.findMany({
-      where,
+      where: finalWhere,
       skip,
       take: limit,
       include: {
@@ -625,13 +665,19 @@ export const getSolicitudesPendientes = asyncHandler(async (req: Request, res: R
             ncf: true,
             fecha: true,
             total: true,
-            metodoPago: true
+            metodoPago: true,
+            estado: {
+              select: {
+                id: true,
+                nombre: true
+              }
+            }
           }
         }
       },
       orderBy: { fechaRecepcion: 'desc' }
     }),
-    prisma.solicitudRegistroInspeccion.count({ where })
+    prisma.solicitudRegistroInspeccion.count({ where: finalWhere })
   ]);
 
   res.json({
@@ -688,9 +734,11 @@ export const cobrarSolicitud = asyncHandler(async (req: AuthRequest, res: Respon
     throw new AppError('Esta solicitud ya tiene una factura asociada', 400);
   }
 
-  // Calcular monto (precio de la categoría IRC)
+  // Calcular monto (precio de la categoría IRC * años de vigencia)
   // ONDA es una institución sin fines de lucro, no cobra ITBIS
-  const total = Number(solicitud.categoriaIrc.precio);
+  const anosVigencia = data.anosVigencia || 1;
+  const precioAnual = Number(solicitud.categoriaIrc.precio);
+  const total = precioAnual * anosVigencia;
 
   // Generar código de factura
   const generateCodigoFactura = async (): Promise<string> => {
@@ -775,12 +823,26 @@ export const cobrarSolicitud = asyncHandler(async (req: AuthRequest, res: Respon
 
   // Crear factura y actualizar solicitud en transacción
   const resultado = await prisma.$transaction(async (tx) => {
+    // Obtener datos de la empresa para la factura
+    const empresa = await tx.empresaInspeccionada.findUnique({
+      where: { id: solicitud.empresaId! },
+      select: {
+        nombreEmpresa: true,
+        telefono: true,
+        email: true
+      }
+    });
+
+    // Preparar observaciones con datos del cliente
+    const observacionesFactura = data.observaciones ||
+      `Pago de Solicitud IRC ${solicitud.codigo}\nCliente: ${empresa?.nombreEmpresa || solicitud.nombreEmpresa}\nTel: ${empresa?.telefono || 'N/A'}\nEmail: ${empresa?.email || 'N/A'}`;
+
     // 1. Crear factura
     const factura = await tx.factura.create({
       data: {
         codigo: codigoFactura,
         ncf: ncf || null,
-        rnc: data.rnc || null,
+        rnc: data.rnc || solicitud.rnc,
         fecha: new Date(),
         subtotal: total,
         itbis: 0, // ONDA no cobra ITBIS
@@ -790,7 +852,7 @@ export const cobrarSolicitud = asyncHandler(async (req: AuthRequest, res: Respon
         fechaPago: new Date(),
         metodoPago: data.metodoPago,
         referenciaPago: data.referencia || null,
-        observaciones: data.observaciones || `Pago de Solicitud IRC ${solicitud.codigo}`,
+        observaciones: observacionesFactura,
         estadoId: estadoFacturaPagada.id,
         cajaId: cajaActiva.id,
         cierreId: 0, // Se asociará al cerrar la caja
@@ -799,10 +861,11 @@ export const cobrarSolicitud = asyncHandler(async (req: AuthRequest, res: Respon
     });
 
     // 2. Crear item de factura
+    const conceptoVigencia = anosVigencia > 1 ? ` (${anosVigencia} años)` : '';
     await tx.facturaItem.create({
       data: {
         facturaId: factura.id,
-        concepto: `Solicitud de Registro IRC - ${solicitud.categoriaIrc.nombre}`,
+        concepto: `Solicitud de Registro IRC - ${solicitud.categoriaIrc.nombre}${conceptoVigencia}`,
         cantidad: 1,
         precioUnitario: total,
         subtotal: total,
@@ -811,13 +874,19 @@ export const cobrarSolicitud = asyncHandler(async (req: AuthRequest, res: Respon
       }
     });
 
-    // 3. Vincular factura a solicitud
+    // 3. Vincular factura a solicitud y calcular fecha de vencimiento
+    const fechaPago = new Date();
+    const fechaVencimiento = new Date(fechaPago);
+    fechaVencimiento.setFullYear(fechaVencimiento.getFullYear() + anosVigencia);
+
     await tx.solicitudRegistroInspeccion.update({
       where: { id: solicitudId },
       data: {
         facturaId: factura.id,
         estadoId: estadoSolicitudPagada.id,
-        fechaPago: new Date()
+        fechaPago: fechaPago,
+        anosVigencia: anosVigencia,
+        fechaVencimiento: fechaVencimiento
       }
     });
 

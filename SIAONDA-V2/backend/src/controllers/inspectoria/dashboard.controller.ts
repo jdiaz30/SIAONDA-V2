@@ -64,7 +64,7 @@ export const getDashboard = async (req: Request, res: Response) => {
 
       // Solicitudes pendientes certificado (asentadas, sin certificado generado)
       prisma.solicitudRegistroInspeccion.count({
-        where: { estadoId: 4 } // ASENTADA (pendientes de generar certificado)
+        where: { estadoId: 5 } // ASENTADA (pendientes de generar certificado)
       }),
 
       // Casos pendientes asignación

@@ -24,13 +24,34 @@ const createFormularioSchema = z.object({
 });
 
 // Generar código único de formulario: 8 dígitos + /MM/YYYY
+// Con protección contra race conditions en concurrencia
 const generateCodigoFormulario = async (): Promise<string> => {
   const now = new Date();
-  const count = await prisma.formulario.count();
-  const numero = (count + 1).toString().padStart(8, '0');
   const mes = (now.getMonth() + 1).toString().padStart(2, '0');
   const año = now.getFullYear();
-  return `${numero}/${mes}/${año}`;
+
+  // Retry hasta 5 veces si hay colisión
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const count = await prisma.formulario.count();
+    const numero = (count + 1 + attempt).toString().padStart(8, '0');
+    const codigo = `${numero}/${mes}/${año}`;
+
+    // Verificar que no exista
+    const existe = await prisma.formulario.findUnique({
+      where: { codigo }
+    });
+
+    if (!existe) {
+      return codigo;
+    }
+
+    // Si existe, esperar un tiempo aleatorio antes de reintentar
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+  }
+
+  // Fallback: usar timestamp para garantizar unicidad
+  const timestamp = Date.now();
+  return `${timestamp.toString().padStart(8, '0')}/${mes}/${año}`;
 };
 
 // GET /api/formularios
@@ -41,7 +62,10 @@ export const getFormularios = asyncHandler(async (req: Request, res: Response) =
   const search = req.query.search as string;
   const estadoId = req.query.estadoId ? parseInt(req.query.estadoId as string) : undefined;
 
-  const where: any = {};
+  const where: any = {
+    // Excluir obras hijas de producciones (solo mostrar producciones padre y formularios normales)
+    produccionPadreId: null
+  };
 
   if (search) {
     where.OR = [
@@ -149,7 +173,11 @@ export const getFormulario = asyncHandler(async (req: Request, res: Response) =>
       },
       clientes: {
         include: {
-          cliente: true
+          cliente: {
+            include: {
+              archivos: true
+            }
+          }
         }
       },
       productos: {
@@ -176,7 +204,8 @@ export const getFormulario = asyncHandler(async (req: Request, res: Response) =>
                 }
               }
             }
-          }
+          },
+          archivos: true
         }
       },
       certificados: {
@@ -189,7 +218,15 @@ export const getFormulario = asyncHandler(async (req: Request, res: Response) =>
           estado: true,
           empresa: true,
           certificado: true,
-          categoriaIrc: true, // Importante para mostrar en la UI
+          categoriaIrc: true,
+          factura: {
+            select: {
+              id: true,
+              codigo: true,
+              ncf: true,
+              total: true,
+            }
+          },
           recibidoPor: {
             select: {
               id: true,
@@ -588,6 +625,7 @@ export const deleteFormulario = asyncHandler(async (req: Request, res: Response)
 // POST /api/formularios/:id/archivos
 export const uploadArchivos = asyncHandler(async (req: Request, res: Response) => {
   const formularioId = parseInt(req.params.id);
+  const formularioProductoId = req.body.formularioProductoId ? parseInt(req.body.formularioProductoId) : null;
   const files = req.files as Express.Multer.File[];
 
   if (!files || files.length === 0) {
@@ -603,17 +641,51 @@ export const uploadArchivos = asyncHandler(async (req: Request, res: Response) =
     throw new AppError('Formulario no encontrado', 404);
   }
 
-  // Guardar información de archivos en un campo JSON del formulario
-  // O crear tabla separada para archivos si prefieres
+  // Si se especifica formularioProductoId, verificar que existe
+  if (formularioProductoId) {
+    const formularioProducto = await prisma.formularioProducto.findFirst({
+      where: {
+        id: formularioProductoId,
+        formularioId
+      }
+    });
+
+    if (!formularioProducto) {
+      throw new AppError('Producto del formulario no encontrado', 404);
+    }
+  }
+
+  // Guardar archivos en la base de datos
+  const archivosGuardados = [];
+  for (const file of files) {
+    // Obtener ruta relativa desde uploads (no hardcodear la carpeta)
+    const rutaRelativa = file.path.replace(/\\/g, '/').split('uploads/')[1] || file.path;
+    const ruta = rutaRelativa.startsWith('uploads/') ? rutaRelativa : `uploads/${rutaRelativa}`;
+
+    const archivo = await prisma.formularioArchivo.create({
+      data: {
+        formularioId,
+        formularioProductoId,
+        nombreOriginal: file.originalname,
+        nombreSistema: file.filename,
+        ruta: ruta,
+        tamano: file.size,
+        mimeType: file.mimetype
+      }
+    });
+
+    archivosGuardados.push({
+      id: archivo.id,
+      nombre: archivo.nombreOriginal,
+      ruta: archivo.ruta,
+      tipo: archivo.mimeType,
+      tamano: Number(archivo.tamano) // Convert BigInt to Number for JSON serialization
+    });
+  }
 
   res.json({
-    message: `${files.length} archivo(s) subido(s) exitosamente`,
-    archivos: files.map(f => ({
-      nombre: f.originalname,
-      ruta: getFileUrl(f.path),
-      tipo: f.mimetype,
-      tamano: f.size
-    }))
+    message: `${archivosGuardados.length} archivo(s) guardado(s) exitosamente`,
+    archivos: archivosGuardados
   });
 });
 
@@ -640,7 +712,7 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
   const {
     autores,        // Array de { clienteId, rol }
     productoId,     // ID del producto/tipo de obra seleccionado
-    datosObra,      // Objeto con: titulo, subtitulo, anioCreacion, descripcion, paisOrigen
+    datosObra,      // Objeto con: camposEspecificos
   } = req.body;
 
   // Validaciones
@@ -652,8 +724,8 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
     throw new AppError('Debe seleccionar un tipo de obra', 400);
   }
 
-  if (!datosObra || !datosObra.titulo || !datosObra.anioCreacion) {
-    throw new AppError('Debe completar los datos obligatorios de la obra', 400);
+  if (!datosObra || !datosObra.camposEspecificos) {
+    throw new AppError('Debe completar los datos de la obra', 400);
   }
 
   // Verificar que hay un autor principal
@@ -692,13 +764,13 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
   // Generar código único de formulario
   const codigo = await generateCodigoFormulario();
 
-  // Obtener estado PENDIENTE
+  // Obtener estado PENDIENTE_PAGO
   const estadoPendiente = await prisma.formularioEstado.findFirst({
-    where: { nombre: 'PENDIENTE' }
+    where: { nombre: 'PENDIENTE_PAGO' }
   });
 
   if (!estadoPendiente) {
-    throw new AppError('Estado PENDIENTE no configurado', 500);
+    throw new AppError('Estado PENDIENTE_PAGO no configurado', 500);
   }
 
   // Crear formulario en transacción
@@ -710,16 +782,8 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
         fecha: new Date(),
         estadoId: estadoPendiente.id,
         usuarioId: req.usuario!.id,
-        // Guardar datos de la obra en observaciones temporalmente
-        // TODO: En el futuro crear campos específicos en el schema
-        observaciones: JSON.stringify({
-          titulo: datosObra.titulo,
-          subtitulo: datosObra.subtitulo,
-          anioCreacion: datosObra.anioCreacion,
-          descripcion: datosObra.descripcion,
-          paisOrigen: datosObra.paisOrigen,
-          ...datosObra.camposEspecificos // Campos específicos por tipo de obra
-        })
+        // Guardar todos los datos de la obra en observaciones como JSON
+        observaciones: JSON.stringify(datosObra.camposEspecificos)
       }
     });
 
@@ -739,8 +803,7 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
       data: {
         formularioId: nuevoFormulario.id,
         productoId: producto.id,
-        cantidad: 1,
-        precio: precioProducto
+        cantidad: 1
       }
     });
 
@@ -774,5 +837,341 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
   res.status(201).json({
     message: 'Formulario creado exitosamente',
     formulario: formularioCompleto
+  });
+});
+
+/**
+ * POST /api/formularios/obras-multiple
+ * Crear formulario con MÚLTIPLES obras (sistema de carrito)
+ */
+export const createFormularioObrasMultiple = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  const {
+    autores,  // Array de { clienteId, rol }
+    obras     // Array de { productoId, datosObra: { camposEspecificos } }
+  } = req.body;
+
+  // Validaciones
+  if (!autores || autores.length === 0) {
+    throw new AppError('Debe incluir al menos un autor', 400);
+  }
+
+  if (!obras || obras.length === 0) {
+    throw new AppError('Debe incluir al menos una obra en el carrito', 400);
+  }
+
+  // Verificar que hay un autor principal
+  const tieneAutorPrincipal = autores.some((a: any) => a.rol === 'AUTOR_PRINCIPAL');
+  if (!tieneAutorPrincipal) {
+    throw new AppError('Debe designar un Autor Principal', 400);
+  }
+
+  // Obtener estado PENDIENTE_PAGO
+  const estadoPendiente = await prisma.formularioEstado.findFirst({
+    where: { nombre: 'PENDIENTE_PAGO' }
+  });
+
+  if (!estadoPendiente) {
+    throw new AppError('Estado PENDIENTE_PAGO no configurado', 500);
+  }
+
+  // Validar productos y calcular total
+  let montoTotal = 0;
+  const productosValidados: Array<{
+    productoId: number;
+    datosObra: any;
+    producto: any;
+    precio: number;
+  }> = [];
+
+  for (const obra of obras) {
+    if (!obra.productoId) {
+      throw new AppError('Cada obra debe tener un productoId', 400);
+    }
+
+    if (!obra.datosObra || !obra.datosObra.camposEspecificos) {
+      throw new AppError('Cada obra debe tener datos completos', 400);
+    }
+
+    const producto = await prisma.producto.findUnique({
+      where: { id: obra.productoId },
+      include: {
+        costos: {
+          where: {
+            OR: [
+              { fechaFinal: null },
+              { fechaFinal: { gte: new Date() } }
+            ],
+            fechaInicio: { lte: new Date() }
+          },
+          orderBy: { cantidadMin: 'asc' },
+          take: 1
+        }
+      }
+    });
+
+    if (!producto) {
+      throw new AppError(`Producto con ID ${obra.productoId} no encontrado`, 404);
+    }
+
+    const precio = producto.costos[0]?.precio;
+    if (!precio) {
+      throw new AppError(`No se encontró precio para el producto ${producto.codigo}`, 500);
+    }
+
+    montoTotal += Number(precio);
+    productosValidados.push({
+      productoId: obra.productoId,
+      datosObra: obra.datosObra,
+      producto,
+      precio
+    });
+  }
+
+  // Generar código único
+  const codigo = await generateCodigoFormulario();
+
+  // Crear formulario con todas las obras en UNA transacción
+  const formulario = await prisma.$transaction(async (tx) => {
+    // 1. Crear formulario principal
+    const nuevoFormulario = await tx.formulario.create({
+      data: {
+        codigo,
+        fecha: new Date(),
+        estadoId: estadoPendiente.id,
+        usuarioId: req.usuario!.id,
+        montoTotal
+      }
+    });
+
+    // 2. Asociar autores (una sola vez para todas las obras)
+    for (const autor of autores) {
+      await tx.formularioCliente.create({
+        data: {
+          formularioId: nuevoFormulario.id,
+          clienteId: autor.clienteId,
+          tipoRelacion: autor.rol
+        }
+      });
+    }
+
+    // 3. Crear FormularioProducto por CADA obra en el carrito
+    for (const { productoId, datosObra, precio } of productosValidados) {
+      const formularioProducto = await tx.formularioProducto.create({
+        data: {
+          formularioId: nuevoFormulario.id,
+          productoId,
+          cantidad: 1
+        }
+      });
+
+      // 4. Obtener campos del formulario para este producto
+      const campos = await tx.formularioCampo.findMany({
+        where: { productoId }
+      });
+
+      // 5. Guardar valores de campos específicos de ESTA obra
+      for (const campo of campos) {
+        const valor = datosObra.camposEspecificos[campo.campo];
+
+        // Solo guardar si tiene valor
+        if (valor !== undefined && valor !== null && valor !== '') {
+          await tx.formularioProductoCampo.create({
+            data: {
+              formularioProductoId: formularioProducto.id,
+              campoId: campo.id,
+              valor: String(valor)
+            }
+          });
+        }
+      }
+    }
+
+    return nuevoFormulario;
+  });
+
+  // Obtener formulario completo con todas las relaciones
+  const formularioCompleto = await prisma.formulario.findUnique({
+    where: { id: formulario.id },
+    include: {
+      estado: true,
+      usuario: {
+        select: {
+          id: true,
+          nombrecompleto: true
+        }
+      },
+      clientes: {
+        include: {
+          cliente: true
+        }
+      },
+      productos: {
+        include: {
+          producto: true,
+          campos: {
+            include: {
+              campo: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  res.status(201).json({
+    message: `Formulario creado exitosamente con ${obras.length} obra(s)`,
+    formulario: formularioCompleto,
+    totalObras: obras.length,
+    montoTotal
+  });
+});
+
+/**
+ * PUT /api/formularios/:id/corregir
+ * Corregir formulario devuelto desde Registro
+ */
+export const corregirFormulario = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { campos } = req.body; // Array de { id: campoId, valor: string }
+
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  if (!campos || !Array.isArray(campos)) {
+    throw new AppError('Debe proporcionar campos a actualizar', 400);
+  }
+
+  // Verificar que el formulario existe y está en estado DEVUELTO
+  const formulario = await prisma.formulario.findUnique({
+    where: { id },
+    include: {
+      estado: true,
+      productos: {
+        include: {
+          campos: true
+        }
+      }
+    }
+  });
+
+  if (!formulario) {
+    throw new AppError('Formulario no encontrado', 404);
+  }
+
+  if (formulario.estado.nombre !== 'DEVUELTO') {
+    throw new AppError('Solo se pueden corregir formularios en estado DEVUELTO', 400);
+  }
+
+  // Actualizar campos en transacción
+  await prisma.$transaction(async (tx) => {
+    // 1. Actualizar cada campo
+    for (const campo of campos) {
+      if (!campo.id || campo.valor === undefined) {
+        continue;
+      }
+
+      await tx.formularioProductoCampo.update({
+        where: { id: campo.id },
+        data: { valor: campo.valor }
+      });
+    }
+
+    // 2. Cambiar estado del formulario a PAGADO para que vuelva al flujo de Registro
+    const estadoPagado = await tx.formularioEstado.findFirst({
+      where: { nombre: 'PAGADO' }
+    });
+
+    if (!estadoPagado) {
+      throw new AppError('Estado PAGADO no encontrado', 500);
+    }
+
+    // 3. Actualizar formulario: cambiar estado y limpiar datos de devolución
+    await tx.formulario.update({
+      where: { id },
+      data: {
+        estadoId: estadoPagado.id,
+        mensajeDevolucion: null,
+        fechaDevolucion: null
+      }
+    });
+
+    // 4. Buscar el Registro asociado a este formulario y cambiar su estado a PENDIENTE_ASENTAMIENTO
+    const registroDevuelto = await tx.registro.findFirst({
+      where: {
+        formularioProducto: {
+          formularioId: id
+        }
+      },
+      include: {
+        estado: true
+      }
+    });
+
+    if (registroDevuelto && registroDevuelto.estado.nombre === 'DEVUELTO_AAU') {
+      const estadoPendienteAsentamiento = await tx.registroEstado.findFirst({
+        where: { nombre: 'PENDIENTE_ASENTAMIENTO' }
+      });
+
+      if (estadoPendienteAsentamiento) {
+        await tx.registro.update({
+          where: { id: registroDevuelto.id },
+          data: {
+            estadoId: estadoPendienteAsentamiento.id,
+            observaciones: `Formulario corregido por AAU. ${registroDevuelto.observaciones || ''}`
+          }
+        });
+      }
+    }
+  });
+
+  res.json({
+    success: true,
+    message: 'Formulario corregido exitosamente. Será reenviado a Registro.'
+  });
+});
+
+// GET /api/formularios/:id/historial - Obtener historial de cambios de estado
+export const getHistorialFormulario = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const formulario = await prisma.formulario.findUnique({
+    where: { id: parseInt(id) }
+  });
+
+  if (!formulario) {
+    throw new AppError('Formulario no encontrado', 404);
+  }
+
+  const historial = await prisma.formularioHistorial.findMany({
+    where: { formularioId: parseInt(id) },
+    include: {
+      estadoAnterior: {
+        select: { nombre: true, descripcion: true }
+      },
+      estadoNuevo: {
+        select: { nombre: true, descripcion: true }
+      },
+      usuario: {
+        select: {
+          id: true,
+          nombre: true,
+          nombrecompleto: true,
+          tipo: {
+            select: { nombre: true }
+          }
+        }
+      }
+    },
+    orderBy: { fecha: 'asc' }
+  });
+
+  res.json({
+    success: true,
+    data: historial
   });
 });

@@ -7,6 +7,7 @@ interface Usuario {
   nombrecompleto: string;
   codigo: string;
   tipo: string;
+  tipoId: number;
   correo: string | null;
 }
 
@@ -14,8 +15,9 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   usuario: Usuario | null;
+  permisos: string[];
   isAuthenticated: boolean;
-  setAuth: (accessToken: string, refreshToken: string, usuario: Usuario) => void;
+  setAuth: (accessToken: string, refreshToken: string, usuario: Usuario, permisos: string[]) => void;
   setAccessToken: (accessToken: string) => void;
   logout: () => void;
 }
@@ -26,13 +28,15 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       usuario: null,
+      permisos: [],
       isAuthenticated: false,
 
-      setAuth: (accessToken, refreshToken, usuario) =>
+      setAuth: (accessToken, refreshToken, usuario, permisos) =>
         set({
           accessToken,
           refreshToken,
           usuario,
+          permisos,
           isAuthenticated: true,
         }),
 
@@ -44,6 +48,7 @@ export const useAuthStore = create<AuthState>()(
           accessToken: null,
           refreshToken: null,
           usuario: null,
+          permisos: [],
           isAuthenticated: false,
         }),
     }),

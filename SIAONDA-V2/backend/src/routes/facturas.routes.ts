@@ -5,19 +5,23 @@ import {
   getFactura,
   createFactura,
   createFacturaDesdeFormulario,
+  createFacturaGenerica,
   pagarFactura,
   anularFactura,
+  anularFacturaPagada,
   getEstadosFactura,
   getMetodosPago,
   getReporteVentas,
   deleteFactura,
-  imprimirFactura
+  imprimirFactura,
+  generateFacturaPDFEndpoint
 } from '../controllers/facturas.controller';
 
 const router = Router();
 
-// Ruta pública (sin autenticación) - para impresión
+// Rutas públicas (sin autenticación) - para impresión
 router.get('/:id/imprimir', imprimirFactura);
+router.get('/:id/pdf', generateFacturaPDFEndpoint);
 
 // Todas las demás rutas requieren autenticación
 router.use(authenticate);
@@ -32,10 +36,12 @@ router.get('/', getFacturas);
 router.get('/:id', getFactura);
 router.post('/', createFactura);
 router.post('/desde-formulario', createFacturaDesdeFormulario);
+router.post('/generica', createFacturaGenerica);
 router.delete('/:id', deleteFactura);
 
 // Operaciones especiales
 router.put('/:id/pagar', pagarFactura);
 router.put('/:id/anular', anularFactura);
+router.put('/:id/anular-pagada', anularFacturaPagada);
 
 export default router;

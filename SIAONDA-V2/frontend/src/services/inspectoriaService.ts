@@ -69,8 +69,12 @@ export interface Catalogos {
 export interface ConsejoAdministracion {
   id?: number;
   nombreCompleto: string;
-  cargo: string;
+  cargo: string; // Presidente, Vicepresidente, Secretario, Tesorero, Administrador
   cedula?: string;
+  domicilio?: string;
+  telefono?: string;
+  celular?: string;
+  email?: string;
 }
 
 export interface ClienteEmpresa {
@@ -291,16 +295,26 @@ export const crearSolicitud = async (solicitud: Partial<SolicitudRegistro>): Pro
   return response.data.data;
 };
 
-export const validarSolicitud = async (id: number, categoriaIrcId: number): Promise<SolicitudRegistro> => {
-  const response = await api.post(`/inspectoria/solicitudes/${id}/validar`, { categoriaIrcId });
+export const generarFactura = async (id: number): Promise<SolicitudRegistro> => {
+  const response = await api.post(`/inspectoria/solicitudes/${id}/generar-factura`);
+  return response.data.data;
+};
+
+export const aprobarRevision = async (id: number): Promise<SolicitudRegistro> => {
+  const response = await api.put(`/inspectoria/solicitudes/${id}/aprobar-revision`);
+  return response.data.data;
+};
+
+export const devolverSolicitud = async (id: number, motivo: string): Promise<SolicitudRegistro> => {
+  const response = await api.put(`/inspectoria/solicitudes/${id}/devolver`, { motivo });
   return response.data.data;
 };
 
 export const asentarSolicitud = async (
   id: number,
-  data: { numeroAsiento: string; libroAsiento: string }
+  data: { numeroLibro: string; numeroHoja: string }
 ): Promise<SolicitudRegistro> => {
-  const response = await api.post(`/inspectoria/solicitudes/${id}/asentar`, data);
+  const response = await api.put(`/inspectoria/solicitudes/${id}/asentar`, data);
   return response.data.data;
 };
 
@@ -309,13 +323,25 @@ export const generarCertificado = async (id: number): Promise<SolicitudRegistro>
   return response.data.data;
 };
 
-export const entregarCertificado = async (id: number): Promise<SolicitudRegistro> => {
-  const response = await api.post(`/inspectoria/solicitudes/${id}/entregar`);
+export const firmarCertificado = async (id: number): Promise<SolicitudRegistro> => {
+  const response = await api.put(`/inspectoria/solicitudes/${id}/firmar`);
   return response.data.data;
 };
 
-export const firmarCertificado = async (id: number): Promise<SolicitudRegistro> => {
-  const response = await api.put(`/inspectoria/solicitudes/${id}/firmar`);
+export const subirCertificadoFirmado = async (id: number, archivo: File): Promise<SolicitudRegistro> => {
+  const formData = new FormData();
+  formData.append('certificado', archivo);
+
+  const response = await api.post(`/inspectoria/solicitudes/${id}/subir-certificado-firmado`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data.data;
+};
+
+export const entregarCertificado = async (id: number): Promise<SolicitudRegistro> => {
+  const response = await api.post(`/inspectoria/solicitudes/${id}/entregar`);
   return response.data.data;
 };
 

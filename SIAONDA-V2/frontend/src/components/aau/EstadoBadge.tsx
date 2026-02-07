@@ -9,17 +9,27 @@ const EstadoBadge = ({ estado, className = '' }: EstadoBadgeProps) => {
       case 'PENDIENTE':
         return 'bg-gray-100 text-gray-800';
       case 'PAGADO':
+      case 'PAGADA':
         return 'bg-yellow-100 text-yellow-800';
       case 'EN_REVISION_REGISTRO':
+      case 'EN_REVISION':
       case 'EN REVISION':
         return 'bg-blue-100 text-blue-800';
       case 'DEVUELTO':
+      case 'DEVUELTA':
         return 'bg-red-100 text-red-800 font-bold';
       case 'ASENTADO':
+      case 'ASENTADA':
         return 'bg-green-100 text-green-800';
       case 'CERTIFICADO':
+      case 'CERTIFICADO_GENERADO':
+      case 'FIRMADA':
+        return 'bg-blue-100 text-blue-800';
+      case 'CERTIFICADO_CARGADO':
+      case 'LISTA_ENTREGA':
         return 'bg-green-100 text-green-800';
       case 'ENTREGADO':
+      case 'ENTREGADA':
         return 'bg-green-200 text-green-900';
       case 'CANCELADO':
         return 'bg-gray-300 text-gray-600';
@@ -28,29 +38,6 @@ const EstadoBadge = ({ estado, className = '' }: EstadoBadgeProps) => {
     }
   };
 
-  const getEstadoIcon = (estado: string) => {
-    switch (estado.toUpperCase()) {
-      case 'PENDIENTE':
-        return '⏳';
-      case 'PAGADO':
-        return '💰';
-      case 'EN_REVISION_REGISTRO':
-      case 'EN REVISION':
-        return '🔍';
-      case 'DEVUELTO':
-        return '⚠️';
-      case 'ASENTADO':
-        return '📝';
-      case 'CERTIFICADO':
-        return '✅';
-      case 'ENTREGADO':
-        return '📦';
-      case 'CANCELADO':
-        return '❌';
-      default:
-        return '📋';
-    }
-  };
 
   const formatEstado = (estado: string) => {
     return estado
@@ -65,7 +52,6 @@ const EstadoBadge = ({ estado, className = '' }: EstadoBadgeProps) => {
         estado
       )} ${className}`}
     >
-      <span>{getEstadoIcon(estado)}</span>
       <span>{formatEstado(estado)}</span>
     </span>
   );

@@ -8,6 +8,7 @@ import {
 } from '../../services/clientesService';
 import { visitasService, CreateVisitaDto } from '../../services/visitasService';
 import { archivosService } from '../../services/archivosService';
+import { getErrorMessage } from '../../utils/errorHandler';
 
 const PROVINCIAS_RD = [
   'DISTRITO NACIONAL', 'SANTO DOMINGO', 'SANTIAGO', 'AZUA', 'BAHORUCO', 'BARAHONA',
@@ -82,7 +83,8 @@ const ClienteFormPage = () => {
     movil: '',
     correo: '',
     tipoId: 0,
-    nacionalidadId: 0
+    nacionalidadId: 0,
+    fechaFallecimiento: ''
   });
 
   const [visitaData, setVisitaData] = useState<CreateVisitaDto>({
@@ -150,7 +152,8 @@ const ClienteFormPage = () => {
         movil: cliente.movil || '',
         correo: cliente.correo || '',
         tipoId: cliente.tipoId,
-        nacionalidadId: cliente.nacionalidadId
+        nacionalidadId: cliente.nacionalidadId,
+        fechaFallecimiento: cliente.fechaFallecimiento ? new Date(cliente.fechaFallecimiento).toISOString().split('T')[0] : ''
       });
     } catch (error) {
       console.error('Error cargando cliente:', error);
@@ -209,7 +212,7 @@ const ClienteFormPage = () => {
 
       navigate('/clientes');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al guardar el cliente');
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -418,17 +421,31 @@ const ClienteFormPage = () => {
             </div>
           </div>
 
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Seudónimo</label>
-            <input
-              type="text"
-              name="seudonimo"
-              value={formData.seudonimo}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
-              placeholder="SEUDÓNIMO (SI APLICA)"
-              maxLength={200}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Seudónimo</label>
+              <input
+                type="text"
+                name="seudonimo"
+                value={formData.seudonimo}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                placeholder="SEUDÓNIMO (SI APLICA)"
+                maxLength={200}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Fallecimiento</label>
+              <input
+                type="date"
+                name="fechaFallecimiento"
+                value={formData.fechaFallecimiento}
+                onChange={handleChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Dejar en blanco si el cliente está vivo</p>
+            </div>
           </div>
 
         </div>

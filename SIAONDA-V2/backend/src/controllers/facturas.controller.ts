@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import { generateFacturaPDF } from '../services/facturaPdf.service';
 
 // Schema de validación para crear factura
 const createFacturaSchema = z.object({
@@ -855,13 +856,100 @@ export const getMetodosPago = asyncHandler(async (req: Request, res: Response) =
   res.json(metodos);
 });
 
+// POST /api/facturas/generica
+// Crear factura genérica (para denuncias, inspecciones de oficio, etc.)
+const createFacturaGenericaSchema = z.object({
+  monto: z.number().positive(),
+  concepto: z.string().min(1).default('Servicio ONDA'),
+  metodoPago: z.string(),
+  referenciaPago: z.string().nullable().optional(),
+  observaciones: z.string().nullable().optional(),
+  requiereNCF: z.boolean().default(false),
+  rnc: z.string().nullable().optional()
+});
+
+export const createFacturaGenerica = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  const data = createFacturaGenericaSchema.parse(req.body);
+
+  // Obtener estado "Pendiente"
+  const estadoPendiente = await prisma.facturaEstado.findFirst({
+    where: { nombre: 'Pendiente' }
+  });
+
+  if (!estadoPendiente) {
+    throw new AppError('Estado Pendiente no encontrado', 500);
+  }
+
+  // Generar código de factura
+  const codigo = await generateCodigoFactura();
+
+  // Generar NCF si se requiere
+  let ncf = null;
+  if (data.requiereNCF) {
+    if (!data.rnc) {
+      throw new AppError('RNC requerido para emitir NCF', 400);
+    }
+    ncf = await generateNCF('B01'); // Factura de Crédito Fiscal
+  }
+
+  // Crear factura
+  const factura = await prisma.factura.create({
+    data: {
+      codigo,
+      fecha: new Date(),
+      total: data.monto,
+      itbis: 0,
+      subtotal: data.monto,
+      estadoId: estadoPendiente.id,
+      metodoPago: data.metodoPago,
+      referenciaPago: data.referenciaPago || null,
+      ncf: ncf,
+      rnc: data.rnc || null,
+      observaciones: data.observaciones || null,
+      usuarioId: req.usuario.id,
+      items: {
+        create: [
+          {
+            concepto: data.concepto,
+            cantidad: 1,
+            precioUnitario: data.monto,
+            itbis: 0,
+            total: data.monto
+          }
+        ]
+      }
+    },
+    include: {
+      items: true,
+      estado: true,
+      usuario: {
+        select: {
+          id: true,
+          nombre: true,
+          apellido: true
+        }
+      }
+    }
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Factura creada exitosamente',
+    data: factura
+  });
+});
+
 // GET /api/facturas/:id/imprimir
 // Generar PDF de factura para impresión - Formato ONDA (80mm térmico)
 export const imprimirFactura = asyncHandler(async (req: Request, res: Response) => {
   const PDFDocument = require('pdfkit');
   const facturaId = parseInt(req.params.id);
 
-  // Obtener factura completa con todas las relaciones, incluyendo solicitud de inspectoría
+  // Obtener factura completa con todas las relaciones, incluyendo solicitud de inspectoría, denuncia y formularios
   const factura = await prisma.factura.findUnique({
     where: { id: facturaId },
     include: {
@@ -876,17 +964,17 @@ export const imprimirFactura = asyncHandler(async (req: Request, res: Response) 
       estado: true,
       solicitudInspeccion: {
         include: {
-          formulario: {
+          empresa: true,
+          categoriaIrc: true,
+          estado: true
+        }
+      },
+      denuncia: true,
+      formularios: {
+        include: {
+          clientes: {
             include: {
-              productos: {
-                include: {
-                  campos: {
-                    include: {
-                      campo: true
-                    }
-                  }
-                }
-              }
+              cliente: true
             }
           }
         }
@@ -898,11 +986,12 @@ export const imprimirFactura = asyncHandler(async (req: Request, res: Response) 
     throw new AppError('Factura no encontrada', 404);
   }
 
-  // Crear documento PDF - Formato papel térmico 80mm x altura variable
+  // Crear documento PDF - Formato papel térmico 80mm x altura automática
   // 80mm = 226.77 puntos (1mm = 2.834645669 puntos)
+  // Altura estimada basada en el contenido (se ajusta dinámicamente)
   const doc = new PDFDocument({
     margin: 10,
-    size: [226.77, 841.89], // 80mm ancho x altura A4 (se ajusta automáticamente)
+    size: [226.77, 600], // 80mm ancho x altura suficiente para el contenido típico
   });
 
   // Configurar respuesta HTTP
@@ -916,11 +1005,30 @@ export const imprimirFactura = asyncHandler(async (req: Request, res: Response) 
   const margin = 10;
   const contentWidth = pageWidth - (margin * 2);
 
-  // ENCABEZADO - ONDA
-  doc.fontSize(10).font('Helvetica-Bold').text('ONDA', { align: 'center' });
+  // ENCABEZADO - LOGO ONDA
+  const logoPath = require('path').join(__dirname, '../../public/logo-onda.png');
+  const fs = require('fs');
+
+  if (fs.existsSync(logoPath)) {
+    try {
+      // Agregar logo centrado (100px de ancho para mejor visibilidad)
+      const logoWidth = 100;
+      const logoX = (pageWidth - logoWidth) / 2;
+      doc.image(logoPath, logoX, doc.y, { width: logoWidth });
+      doc.moveDown(1.2);
+    } catch (error) {
+      console.error('Error al cargar logo:', error);
+      // Si falla, mostrar texto
+      doc.fontSize(10).font('Helvetica-Bold').text('ONDA', { align: 'center' });
+    }
+  } else {
+    // Si no existe el logo, mostrar texto
+    doc.fontSize(10).font('Helvetica-Bold').text('ONDA', { align: 'center' });
+  }
+
   doc.fontSize(7).font('Helvetica').text('Oficina Nacional de Derecho de Autor', { align: 'center' });
   doc.fontSize(6).text('RNC: 401-50879-6', { align: 'center' });
-  doc.moveDown(0.3);
+  doc.moveDown(0.5);
 
   // Línea separadora
   doc.moveTo(margin, doc.y).lineTo(pageWidth - margin, doc.y).stroke();
@@ -954,8 +1062,16 @@ export const imprimirFactura = asyncHandler(async (req: Request, res: Response) 
      .text(`Fecha: ${fechaFormateada}`, margin, doc.y);
 
   // Código de formulario (si existe)
-  if (factura.solicitudInspeccion?.formulario?.codigo) {
-    doc.text(`Form: ${factura.solicitudInspeccion.formulario.codigo}`, margin, doc.y);
+  // Puede venir de solicitudInspeccion IRC o de formularios normales
+  let codigoFormulario = null;
+  if (factura.solicitudInspeccion) {
+    codigoFormulario = factura.solicitudInspeccion.codigo;
+  } else if (factura.formularios && factura.formularios.length > 0) {
+    codigoFormulario = factura.formularios[0].codigo;
+  }
+
+  if (codigoFormulario) {
+    doc.text(`Form: ${codigoFormulario}`, margin, doc.y);
   }
 
   doc.text(`Cajero: ${factura.caja?.usuario?.nombrecompleto || 'N/A'}`, margin, doc.y);
@@ -966,36 +1082,40 @@ export const imprimirFactura = asyncHandler(async (req: Request, res: Response) 
   doc.moveDown(0.4);
 
   // DATOS DEL CLIENTE
-  // Extraer datos del cliente desde el formulario IRC o cliente directo
+  // Prioridad:
+  // 1. Cliente directo en la factura (IRC, denuncias)
+  // 2. Empresa de solicitud IRC
+  // 3. Formulario de obras
+  // 4. Denuncia
   let nombreCliente = 'N/A';
   let telefonoCliente = 'N/A';
   let emailCliente = 'N/A';
 
   if (factura.cliente) {
-    // Cliente directo en la factura
-    nombreCliente = factura.cliente.nombrecompleto;
+    // Cliente directo en la factura (IRC, etc)
+    nombreCliente = factura.cliente.nombrecompleto || factura.cliente.nombre || 'N/A';
     telefonoCliente = factura.cliente.telefono || 'N/A';
     emailCliente = factura.cliente.correo || 'N/A';
-  } else if (factura.solicitudInspeccion?.formulario?.productos?.[0]?.campos) {
-    // Extraer desde los campos del formulario IRC
-    const campos = factura.solicitudInspeccion.formulario.productos[0].campos;
-
-    // Buscar nombre (puede ser empresa o persona física)
-    const nombreCampo = campos.find(c =>
-      c.campo.campo === 'razonSocial' ||           // Persona Moral
-      c.campo.campo === 'nombreComercial' ||       // Persona Moral
-      c.campo.campo === 'nombreEmpresa' ||         // Persona Moral
-      c.campo.campo === 'nombreRepresentante' ||   // Persona Física (representante)
-      c.campo.campo === 'nombreCompleto' ||        // Persona Física
-      c.campo.campo === 'nombre'                   // Genérico
-    );
-
-    const telefonoCampo = campos.find(c => c.campo.campo === 'telefono');
-    const emailCampo = campos.find(c => c.campo.campo === 'email' || c.campo.campo === 'correo');
-
-    if (nombreCampo) nombreCliente = nombreCampo.valor;
-    if (telefonoCampo) telefonoCliente = telefonoCampo.valor;
-    if (emailCampo) emailCliente = emailCampo.valor;
+  } else if (factura.solicitudInspeccion?.empresa) {
+    // Solicitud IRC - obtener datos de la empresa
+    const empresa = factura.solicitudInspeccion.empresa;
+    nombreCliente = empresa.nombreEmpresa || empresa.nombreComercial || 'N/A';
+    telefonoCliente = empresa.telefono || 'N/A';
+    emailCliente = empresa.email || 'N/A';
+  } else if (factura.formularios && factura.formularios.length > 0) {
+    // Extraer desde formulario de obras (NUEVO)
+    const formulario = factura.formularios[0];
+    if (formulario.clientes && formulario.clientes.length > 0) {
+      const clientePrincipal = formulario.clientes[0].cliente;
+      nombreCliente = `${clientePrincipal.nombre} ${clientePrincipal.apellido}`;
+      telefonoCliente = clientePrincipal.telefono || 'N/A';
+      emailCliente = clientePrincipal.correo || 'N/A';
+    }
+  } else if (factura.denuncia) {
+    // Extraer desde la denuncia
+    nombreCliente = factura.denuncia.denuncianteNombre;
+    telefonoCliente = factura.denuncia.denuncianteTelefono || 'N/A';
+    emailCliente = factura.denuncia.denuncianteEmail || 'N/A';
   }
 
   doc.fontSize(7).font('Helvetica-Bold').text('CLIENTE');
@@ -1098,4 +1218,140 @@ export const imprimirFactura = asyncHandler(async (req: Request, res: Response) 
 
   // Finalizar documento
   doc.end();
+});
+
+// GET /api/facturas/:id/pdf - Generar PDF de factura con logo ONDA
+export const generateFacturaPDFEndpoint = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+
+  const factura = await prisma.factura.findUnique({
+    where: { id },
+    include: {
+      cliente: {
+        select: {
+          nombrecompleto: true,
+          identificacion: true,
+          rnc: true,
+          telefono: true,
+          correo: true
+        }
+      },
+      items: true
+    }
+  });
+
+  if (!factura) {
+    throw new AppError('Factura no encontrada', 404);
+  }
+
+  // Preparar datos para el PDF
+  const facturaData = {
+    id: factura.id,
+    codigo: factura.codigo,
+    ncf: factura.ncf,
+    fecha: factura.fecha,
+    subtotal: Number(factura.subtotal),
+    itbis: Number(factura.itbis),
+    descuento: Number(factura.descuento),
+    total: Number(factura.total),
+    cliente: factura.cliente ? {
+      nombrecompleto: factura.cliente.nombrecompleto,
+      identificacion: factura.cliente.identificacion,
+      rnc: factura.cliente.rnc,
+      telefono: factura.cliente.telefono,
+      correo: factura.cliente.correo
+    } : undefined,
+    items: factura.items.map(item => ({
+      descripcion: item.concepto,
+      cantidad: item.cantidad,
+      precioUnitario: Number(item.precioUnitario),
+      subtotal: Number(item.subtotal)
+    })),
+    metodoPago: factura.metodoPago || undefined,
+    observaciones: factura.observaciones
+  };
+
+  const pdfBuffer = await generateFacturaPDF(facturaData);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="factura-${factura.codigo}.pdf"`);
+  res.send(pdfBuffer);
+});
+
+// PUT /api/facturas/:id/anular-pagada - Anular una factura que ya fue pagada
+export const anularFacturaPagada = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id);
+
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  // Solo administradores pueden anular facturas pagadas
+  if (req.usuario.tipo !== 'ADMINISTRADOR' && req.usuario.tipo !== 'SUPERVISOR') {
+    throw new AppError('No tiene permisos para anular facturas pagadas', 403);
+  }
+
+  const { motivo } = req.body;
+
+  if (!motivo || motivo.trim().length < 10) {
+    throw new AppError('Debe proporcionar un motivo detallado (mínimo 10 caracteres)', 400);
+  }
+
+  const factura = await prisma.factura.findUnique({
+    where: { id },
+    include: {
+      estado: true,
+      cliente: true,
+      items: true
+    }
+  });
+
+  if (!factura) {
+    throw new AppError('Factura no encontrada', 404);
+  }
+
+  if (factura.estado.nombre === 'Anulada') {
+    throw new AppError('La factura ya está anulada', 400);
+  }
+
+  if (factura.estado.nombre !== 'Pagada' && factura.estado.nombre !== 'Cerrada') {
+    throw new AppError('Solo se pueden anular facturas pagadas o cerradas', 400);
+  }
+
+  const estadoAnulada = await prisma.facturaEstado.findFirst({
+    where: { nombre: 'Anulada' }
+  });
+
+  if (!estadoAnulada) {
+    throw new AppError('Estado Anulada no configurado', 500);
+  }
+
+  // Realizar la anulación en una transacción
+  const resultado = await prisma.$transaction(async (tx) => {
+    // Actualizar la factura a estado Anulada
+    const facturaActualizada = await tx.factura.update({
+      where: { id },
+      data: {
+        estadoId: estadoAnulada.id,
+        observaciones: `ANULADA (FACTURA PAGADA) - Fecha: ${new Date().toLocaleDateString()} - Usuario: ${req.usuario!.nombrecompleto} - Motivo: ${motivo}. ${factura.observaciones || ''}`
+      },
+      include: {
+        estado: true,
+        cliente: true,
+        items: {
+          include: {
+            producto: true
+          }
+        }
+      }
+    });
+
+    return facturaActualizada;
+  });
+
+  res.json({
+    message: 'Factura pagada anulada exitosamente',
+    factura: resultado,
+    advertencia: 'Esta operación quedó registrada en el sistema. El NCF (si existe) no puede ser reutilizado según normativa DGII.'
+  });
 });

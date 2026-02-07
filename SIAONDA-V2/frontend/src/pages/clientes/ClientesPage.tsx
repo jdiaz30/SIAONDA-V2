@@ -1,8 +1,21 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { clientesService, Cliente } from '../../services/clientesService';
+import { usePermissions } from '../../hooks/usePermissions';
+import NoAccess from '../../components/common/NoAccess';
 
 const ClientesPage = () => {
+  const { hasPermission } = usePermissions();
+
+  // Verificar permiso para ver clientes - RECEPCIONISTA NO puede
+  if (!hasPermission('atu.clientes.create') && !hasPermission('atu.clientes.update')) {
+    return (
+      <div className="p-8">
+        <NoAccess message="No tienes permiso para gestionar clientes. Esta funcionalidad es solo para Técnicos ATU y Encargado de ATU." />
+      </div>
+    );
+  }
+
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

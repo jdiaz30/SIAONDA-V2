@@ -1,8 +1,21 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { formulariosService, Formulario } from '../../services/formulariosService';
+import { usePermissions } from '../../hooks/usePermissions';
+import NoAccess from '../../components/common/NoAccess';
 
 export default function FormulariosPage() {
+  const { isAdmin } = usePermissions();
+
+  // Restricción: Solo ADMINISTRADOR puede acceder a esta página antigua
+  if (!isAdmin()) {
+    return (
+      <div className="p-8">
+        <NoAccess message="Esta página es de uso interno exclusivo del Administrador. Por favor, usa el módulo de Atención al Usuario (/aau) para gestionar formularios." />
+      </div>
+    );
+  }
+
   const [formularios, setFormularios] = useState<Formulario[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState<string>('');

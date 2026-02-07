@@ -84,7 +84,11 @@ export const authorize = (...roles: string[]) => {
       return next(new AppError('No autenticado', 401));
     }
 
-    if (!roles.includes(req.usuario.tipo)) {
+    // Comparación case-insensitive de roles
+    const userRole = req.usuario.tipo.toLowerCase();
+    const allowedRoles = roles.map(role => role.toLowerCase());
+
+    if (!allowedRoles.includes(userRole)) {
       return next(new AppError('No tiene permisos para esta acción', 403));
     }
 

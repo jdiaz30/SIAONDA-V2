@@ -24,6 +24,8 @@ export interface Caja {
   totalFacturas: number | null;
   diferencia: number | null;
   observaciones: string | null;
+  esGratuita: boolean;
+  motivoGratuito: string | null;
   estadoId: number;
   usuarioId: number;
   estado: CajaEstado;
@@ -36,11 +38,8 @@ export interface Caja {
 export interface AbrirCajaData {
   descripcion: string;
   observaciones?: string;
-}
-
-export interface CerrarCajaData {
-  montoFinal: number;
-  observaciones?: string;
+  esGratuita?: boolean;
+  motivoGratuito?: string;
 }
 
 const cajasService = {
@@ -75,9 +74,9 @@ const cajasService = {
     return response.data;
   },
 
-  // Cerrar una caja
-  cerrarCaja: async (id: number, data: CerrarCajaData) => {
-    const response = await api.post(`/cajas/${id}/cerrar`, data);
+  // Cerrar una caja (simplificado como en V1)
+  cerrarCaja: async (id: number) => {
+    const response = await api.post(`/cajas/${id}/cerrar`, {});
     return response.data;
   },
 

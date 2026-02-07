@@ -30,10 +30,10 @@ export const registrarActa = async (req: AuthRequest, res: Response) => {
     }
 
     // Validaciones
-    if (!viajeId || !numeroActa || !inspectorId || !file) {
+    if (!viajeId || !inspectorId || !file) {
       return res.status(400).json({
         success: false,
-        message: 'Faltan datos requeridos (viajeId, numeroActa, inspectorId, PDF del acta)'
+        message: 'Faltan datos requeridos (viajeId, inspectorId, PDF del acta)'
       });
     }
 
@@ -64,16 +64,56 @@ export const registrarActa = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Verificar que el número de acta no esté duplicado
-    const actaExistente = await prisma.actaInspeccionOficio.findUnique({
-      where: { numeroActa }
-    });
+    // Generar número de acta automáticamente en formato XXX-XX (3 dígitos + 2 dígitos de año)
+    // Ejemplo: 001-25, 002-25, ... 001-26
+    let numeroActaGenerado: string;
 
-    if (actaExistente) {
-      return res.status(400).json({
-        success: false,
-        message: 'Este número de acta ya está registrado'
+    if (numeroActa && numeroActa.trim()) {
+      // Si el usuario proporcionó un número, validar formato
+      const formatoValido = /^\d{3}-\d{2}$/.test(numeroActa.trim());
+      if (!formatoValido) {
+        return res.status(400).json({
+          success: false,
+          message: 'El número de acta debe tener el formato XXX-XX (ej: 001-25)'
+        });
+      }
+      numeroActaGenerado = numeroActa.trim();
+
+      // Verificar que no esté duplicado
+      const actaExistente = await prisma.actaInspeccionOficio.findUnique({
+        where: { numeroActa: numeroActaGenerado }
       });
+
+      if (actaExistente) {
+        return res.status(400).json({
+          success: false,
+          message: 'Este número de acta ya está registrado'
+        });
+      }
+    } else {
+      // Generar automáticamente
+      const año = new Date().getFullYear();
+      const añoCorto = año.toString().slice(-2); // Últimos 2 dígitos (25, 26, etc.)
+
+      // Buscar el último número de acta del año actual
+      const ultimaActa = await prisma.actaInspeccionOficio.findFirst({
+        where: {
+          numeroActa: {
+            endsWith: `-${añoCorto}`
+          }
+        },
+        orderBy: {
+          numeroActa: 'desc'
+        }
+      });
+
+      let numeroSecuencial = 1;
+      if (ultimaActa) {
+        const partes = ultimaActa.numeroActa.split('-');
+        numeroSecuencial = parseInt(partes[0]) + 1;
+      }
+
+      numeroActaGenerado = `${numeroSecuencial.toString().padStart(3, '0')}-${añoCorto}`;
     }
 
     // Buscar o crear empresa
@@ -130,7 +170,7 @@ export const registrarActa = async (req: AuthRequest, res: Response) => {
 
     const acta = await prisma.actaInspeccionOficio.create({
       data: {
-        numeroActa,
+        numeroActa: numeroActaGenerado,
         viajeId: Number(viajeId),
         inspectorId: Number(inspectorId),
         empresaId: empresa.id,

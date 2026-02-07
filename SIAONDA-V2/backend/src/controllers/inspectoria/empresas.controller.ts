@@ -32,6 +32,7 @@ export const crearEmpresa = async (req: AuthRequest, res: Response) => {
       telefono,
       fax,
       email,
+      correoElectronico, // Alias del frontend
       paginaWeb,
       categoriaIrcId,
       tipoPersona,
@@ -47,6 +48,9 @@ export const crearEmpresa = async (req: AuthRequest, res: Response) => {
       consejoAdministracion,
       principalesClientes
     } = req.body;
+
+    // Mapear correoElectronico a email
+    const emailFinal = email || correoElectronico || '';
 
     // Validaciones
     if (!rnc || !validarRNC(rnc)) {
@@ -97,7 +101,7 @@ export const crearEmpresa = async (req: AuthRequest, res: Response) => {
         direccion,
         telefono,
         fax,
-        email,
+        email: emailFinal,
         paginaWeb,
         categoriaIrcId,
         tipoPersona,

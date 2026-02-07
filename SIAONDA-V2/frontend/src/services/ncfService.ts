@@ -51,7 +51,12 @@ const ncfService = {
 
   // Crear nueva secuencia NCF
   async crearSecuencia(data: SecuenciaNcfInput): Promise<SecuenciaNcf> {
-    const response = await api.post('/ncf', data);
+    const payload = {
+      ...data,
+      numeroInicial: parseInt(data.numeroInicial),
+      numeroFinal: parseInt(data.numeroFinal)
+    };
+    const response = await api.post('/ncf', payload);
     return response.data;
   },
 

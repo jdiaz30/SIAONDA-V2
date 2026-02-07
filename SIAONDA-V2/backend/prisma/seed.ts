@@ -162,8 +162,7 @@ async function main() {
   console.log('📊 Creando estados de cierre...');
   const estadosCierre = [
     { nombre: 'Abierto', descripcion: 'Cierre abierto (caja activa)' },
-    { nombre: 'En Proceso', descripcion: 'Cierre en proceso' },
-    { nombre: 'Completado', descripcion: 'Cierre completado' }
+    { nombre: 'Cerrado', descripcion: 'Cierre cerrado' }
   ];
 
   for (const estado of estadosCierre) {

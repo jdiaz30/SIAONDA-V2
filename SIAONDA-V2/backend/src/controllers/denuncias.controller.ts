@@ -1,12 +1,13 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { AuthRequest } from '../middleware/auth';
 
 const prisma = new PrismaClient();
 
 /**
  * REGISTRAR DENUNCIA (AuU)
  */
-export const registrarDenuncia = async (req: Request, res: Response) => {
+export const registrarDenuncia = async (req: AuthRequest, res: Response) => {
   try {
     const {
       denuncianteNombre,
@@ -18,7 +19,7 @@ export const registrarDenuncia = async (req: Request, res: Response) => {
       descripcionHechos
     } = req.body;
 
-    const usuarioId = req.user?.id;
+    const usuarioId = req.usuario?.id;
 
     if (!usuarioId) {
       return res.status(401).json({
@@ -123,7 +124,7 @@ export const registrarDenuncia = async (req: Request, res: Response) => {
 /**
  * LISTAR DENUNCIAS
  */
-export const listarDenuncias = async (req: Request, res: Response) => {
+export const listarDenuncias = async (req: AuthRequest, res: Response) => {
   try {
     const { page = 1, limit = 20, estadoId, search } = req.query;
 
@@ -200,7 +201,7 @@ export const listarDenuncias = async (req: Request, res: Response) => {
 /**
  * OBTENER DENUNCIA POR ID
  */
-export const obtenerDenuncia = async (req: Request, res: Response) => {
+export const obtenerDenuncia = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -258,7 +259,7 @@ export const obtenerDenuncia = async (req: Request, res: Response) => {
 /**
  * ASOCIAR FACTURA A DENUNCIA (Después del pago en Caja)
  */
-export const asociarFactura = async (req: Request, res: Response) => {
+export const asociarFactura = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { facturaId } = req.body;
@@ -324,7 +325,7 @@ export const asociarFactura = async (req: Request, res: Response) => {
 /**
  * ASIGNAR INSPECTOR A DENUNCIA
  */
-export const asignarInspector = async (req: Request, res: Response) => {
+export const asignarInspector = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { inspectorId } = req.body;
@@ -397,7 +398,7 @@ export const asignarInspector = async (req: Request, res: Response) => {
         });
       }
 
-      const usuarioId = req.user?.id;
+      const usuarioId = req.usuario?.id;
 
       empresa = await prisma.empresaInspeccionada.create({
         data: {

@@ -6,6 +6,7 @@ import {
   abrirCaja,
   cerrarCaja,
   generarReporteCierre,
+  imprimirReporteCierre,
   getCajaActiva,
   getEstadosCaja,
   deleteCaja,
@@ -14,6 +15,11 @@ import {
 } from '../controllers/cajas.controller';
 
 const router = Router();
+
+// Rutas públicas (sin autenticación) - PDFs e impresión
+router.get('/cierre/:id/imprimir', imprimirReporteCierre);
+
+// Aplicar autenticación al resto de rutas
 router.use(authenticate);
 
 // Catálogos y operaciones especiales

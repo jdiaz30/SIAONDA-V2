@@ -1,12 +1,30 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import aauService, { Formulario } from '../../services/aauService';
 import EstadoBadge from '../../components/aau/EstadoBadge';
+import { usePermissions } from '../../hooks/usePermissions';
+import NoAccess from '../../components/common/NoAccess';
 
 const FormulariosListPage = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const { hasPermission } = usePermissions();
+
+  // Verificar permiso para ver formularios
+  if (!hasPermission('atu.formularios.view_all') && !hasPermission('atu.formularios.view_own')) {
+    return (
+      <div className="p-8">
+        <NoAccess message="No tienes permiso para ver los formularios. Esta funcionalidad es solo para personal de ATU con permisos de visualización." />
+      </div>
+    );
+  }
+
+  const [searchParams] = useSearchParams();
   const [formularios, setFormularios] = useState<Formulario[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Paginacion
+  const [paginaActual, setPaginaActual] = useState(1);
+  const itemsPorPagina = 10;
 
   // Filtros
   const [filtroEstado, setFiltroEstado] = useState(searchParams.get('estado') || '');
@@ -30,7 +48,15 @@ const FormulariosListPage = () => {
       if (buscar) params.buscar = buscar;
 
       const response = await aauService.getFormularios(params);
-      setFormularios(response.data || response);
+      const data = response.data || response;
+
+      // Ordenar por fecha mas reciente primero
+      const ordenados = data.sort((a: Formulario, b: Formulario) => {
+        return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
+      });
+
+      setFormularios(ordenados);
+      setPaginaActual(1); // Resetear a pagina 1 cuando cambian filtros
     } catch (error) {
       console.error('Error al cargar formularios:', error);
       alert('Error al cargar formularios');
@@ -39,37 +65,12 @@ const FormulariosListPage = () => {
     }
   };
 
-  const handleEnviarARegistro = async (id: number, codigo: string) => {
-    if (!confirm(`¿Enviar formulario ${codigo} a Registro para revisión?`)) {
-      return;
-    }
-
-    try {
-      await aauService.enviarARegistro(id);
-      alert('Formulario enviado a Registro exitosamente');
-      fetchFormularios();
-    } catch (error: any) {
-      console.error('Error al enviar:', error);
-      alert(error.response?.data?.message || 'Error al enviar formulario');
-    }
-  };
-
-  const handleEliminar = async (id: number, codigo: string) => {
-    if (!confirm(`¿Está seguro de eliminar el formulario ${codigo}?`)) {
-      return;
-    }
-
-    try {
-      await aauService.deleteFormulario(id);
-      alert('Formulario eliminado exitosamente');
-      fetchFormularios();
-    } catch (error: any) {
-      console.error('Error al eliminar:', error);
-      alert(error.response?.data?.message || 'Error al eliminar formulario');
-    }
-  };
-
   const getClienteNombre = (formulario: Formulario) => {
+    // Si es solicitud IRC, usar nombre de empresa
+    if (formulario.solicitudIrc) {
+      return formulario.solicitudIrc.nombreEmpresa;
+    }
+    // Si es formulario de obra, usar cliente
     if (formulario.clientes && formulario.clientes.length > 0) {
       return formulario.clientes[0].cliente.nombrecompleto;
     }
@@ -77,10 +78,33 @@ const FormulariosListPage = () => {
   };
 
   const getTipo = (formulario: Formulario) => {
+    // Si es solicitud IRC, usar categoría IRC
+    if (formulario.solicitudIrc) {
+      return `IRC - ${formulario.solicitudIrc.categoriaIrc?.codigo || 'N/A'}`;
+    }
+    // Si es formulario de obra, usar categoría de producto
     if (formulario.productos && formulario.productos.length > 0) {
       return formulario.productos[0].producto.categoria;
     }
     return 'Sin categoría';
+  };
+
+  const getEstado = (formulario: Formulario) => {
+    // Si es solicitud IRC, usar su propio estado
+    if (formulario.solicitudIrc) {
+      return formulario.solicitudIrc.estado.nombre;
+    }
+    // Si es formulario de obra, usar su estado
+    return formulario.estado.nombre;
+  };
+
+  const getMontoTotal = (formulario: Formulario) => {
+    // Si es solicitud IRC, usar precio de categoría IRC
+    if (formulario.solicitudIrc?.categoriaIrc) {
+      return Number(formulario.solicitudIrc.categoriaIrc.precio);
+    }
+    // Si es formulario de obra, usar montoTotal
+    return Number(formulario.montoTotal);
   };
 
   return (
@@ -88,8 +112,8 @@ const FormulariosListPage = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">📋 Todos los Registros</h1>
-          <p className="text-gray-600">Gestión completa de formularios</p>
+          <h1 className="text-2xl font-bold text-gray-900">Consulta de Formularios</h1>
+          <p className="text-gray-600">Visualiza el estado y detalles de todos los formularios registrados</p>
         </div>
         <Link
           to="/aau"
@@ -194,7 +218,6 @@ const FormulariosListPage = () => {
           </div>
         ) : formularios.length === 0 ? (
           <div className="text-center py-12">
-            <div className="text-6xl mb-4">📭</div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
               No hay formularios
             </h3>
@@ -241,7 +264,9 @@ const FormulariosListPage = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {formularios.map((formulario) => (
+                {formularios
+                  .slice((paginaActual - 1) * itemsPorPagina, paginaActual * itemsPorPagina)
+                  .map((formulario) => (
                   <tr key={formulario.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
@@ -264,68 +289,21 @@ const FormulariosListPage = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <EstadoBadge estado={formulario.estado.nombre} />
+                      <EstadoBadge estado={getEstado(formulario)} />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        RD$ {Number(formulario.montoTotal).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
+                        RD$ {getMontoTotal(formulario).toLocaleString('es-DO', { minimumFractionDigits: 2 })}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      {/* Ver */}
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {/* Solo Ver Detalles */}
                       <Link
-                        to={`/aau/formularios/${formulario.id}`}
-                        className="text-blue-600 hover:text-blue-900"
+                        to={`/formularios/${formulario.id}`}
+                        className="text-blue-600 hover:text-blue-900 font-medium"
                       >
-                        Ver
+                        Ver Detalles
                       </Link>
-
-                      {/* Acciones según estado */}
-                      {formulario.estado.nombre === 'PENDIENTE' && (
-                        <>
-                          <Link
-                            to={`/aau/formularios/${formulario.id}/editar`}
-                            className="text-yellow-600 hover:text-yellow-900"
-                          >
-                            Editar
-                          </Link>
-                          <button
-                            onClick={() => handleEliminar(formulario.id, formulario.codigo)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Eliminar
-                          </button>
-                        </>
-                      )}
-
-                      {formulario.estado.nombre === 'PAGADO' && (
-                        <>
-                          <button
-                            onClick={() => handleEnviarARegistro(formulario.id, formulario.codigo)}
-                            className="text-green-600 hover:text-green-900 font-semibold"
-                          >
-                            Enviar a Registro
-                          </button>
-                        </>
-                      )}
-
-                      {formulario.estado.nombre === 'DEVUELTO' && (
-                        <Link
-                          to={`/aau/formularios/${formulario.id}/corregir`}
-                          className="text-red-600 hover:text-red-900 font-bold"
-                        >
-                          CORREGIR
-                        </Link>
-                      )}
-
-                      {formulario.estado.nombre === 'CERTIFICADO' && (
-                        <Link
-                          to={`/aau/formularios/${formulario.id}/entregar`}
-                          className="text-green-600 hover:text-green-900"
-                        >
-                          Entregar
-                        </Link>
-                      )}
                     </td>
                   </tr>
                 ))}
@@ -335,12 +313,38 @@ const FormulariosListPage = () => {
         )}
       </div>
 
-      {/* Resumen */}
+      {/* Paginacion y Resumen */}
       {!loading && formularios.length > 0 && (
-        <div className="bg-gray-50 rounded-lg p-4">
-          <p className="text-sm text-gray-600">
-            Mostrando <span className="font-semibold">{formularios.length}</span> formularios
-          </p>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Mostrando {((paginaActual - 1) * itemsPorPagina) + 1}-{Math.min(paginaActual * itemsPorPagina, formularios.length)} de <span className="font-semibold">{formularios.length}</span> formularios
+            </p>
+
+            {Math.ceil(formularios.length / itemsPorPagina) > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPaginaActual(p => Math.max(1, p - 1))}
+                  disabled={paginaActual === 1}
+                  className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  <FiChevronLeft />
+                  Anterior
+                </button>
+                <span className="text-sm text-gray-600">
+                  Pagina {paginaActual} de {Math.ceil(formularios.length / itemsPorPagina)}
+                </span>
+                <button
+                  onClick={() => setPaginaActual(p => Math.min(Math.ceil(formularios.length / itemsPorPagina), p + 1))}
+                  disabled={paginaActual === Math.ceil(formularios.length / itemsPorPagina)}
+                  className="px-3 py-1 border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  Siguiente
+                  <FiChevronRight />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import { comparePassword } from '../utils/bcrypt';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import { obtenerPermisosUsuario } from '../middleware/permissions';
 
 const loginSchema = z.object({
   nombre: z.string().min(1, 'El usuario o correo es requerido'),
@@ -15,6 +16,10 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'El refresh token es requerido')
 });
 
+/**
+ * Controlador de autenticación de usuarios
+ * Valida credenciales, genera tokens JWT y gestiona sesiones
+ */
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { nombre, contrasena } = loginSchema.parse(req.body);
 
@@ -87,6 +92,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     }
   });
 
+  // Obtener permisos del usuario
+  const permisos = await obtenerPermisosUsuario(usuario.tipoId);
+
   res.json({
     accessToken,
     refreshToken,
@@ -96,8 +104,11 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
       nombrecompleto: usuario.nombrecompleto,
       codigo: usuario.codigo,
       tipo: usuario.tipo.nombre,
+      tipoId: usuario.tipoId,
       correo: usuario.correo
-    }
+    },
+    permisos,
+    requiereCambioContrasena: usuario.requiereCambioContrasena || false
   });
 });
 
