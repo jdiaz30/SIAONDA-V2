@@ -412,49 +412,52 @@ const NuevoRegistroObraPage = () => {
 
           {/* Progress Steps */}
           <div className="mt-8">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               {steps.map((step, index) => (
-                <div key={step.id} className="flex items-center flex-1">
-                  <div className="flex items-center gap-3 flex-1">
+                <div key={step.id} className="flex items-center" style={{ flex: index < steps.length - 1 ? 1 : '0 0 auto' }}>
+                  {/* Step Circle and Label */}
+                  <div className="flex flex-col items-center gap-2">
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
+                      className={`w-12 h-12 rounded-full flex items-center justify-center font-bold transition-all border-2 ${
                         currentStepIndex === index
-                          ? 'bg-white text-blue-600 shadow-lg'
+                          ? 'bg-white text-blue-600 border-white shadow-lg scale-110'
                           : currentStepIndex > index
-                          ? 'bg-green-500 text-white'
-                          : 'bg-white/20 text-white/60'
+                          ? 'bg-green-500 text-white border-green-500'
+                          : 'bg-white/10 text-white/60 border-white/30'
                       }`}
                     >
                       {currentStepIndex > index ? (
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                         </svg>
                       ) : (
                         step.numero
                       )}
                     </div>
-                    <div className="flex-1">
-                      <p
-                        className={`text-sm font-medium transition-all ${
-                          currentStepIndex === index
-                            ? 'text-white'
-                            : currentStepIndex > index
-                            ? 'text-green-200'
-                            : 'text-white/60'
-                        }`}
-                      >
-                        {step.nombre}
-                      </p>
-                    </div>
-                  </div>
-                  {index < steps.length - 1 && (
-                    <div
-                      className={`h-1 w-full mx-4 rounded transition-all ${
-                        currentStepIndex > index
-                          ? 'bg-green-500'
-                          : 'bg-white/20'
+                    <p
+                      className={`text-sm font-semibold transition-all whitespace-nowrap ${
+                        currentStepIndex === index
+                          ? 'text-white'
+                          : currentStepIndex > index
+                          ? 'text-green-200'
+                          : 'text-white/50'
                       }`}
-                    />
+                    >
+                      {step.nombre}
+                    </p>
+                  </div>
+
+                  {/* Connector Line */}
+                  {index < steps.length - 1 && (
+                    <div className="flex-1 px-4 pb-6">
+                      <div
+                        className={`h-1.5 w-full rounded-full transition-all ${
+                          currentStepIndex > index
+                            ? 'bg-green-500'
+                            : 'bg-white/20'
+                        }`}
+                      />
+                    </div>
                   )}
                 </div>
               ))}

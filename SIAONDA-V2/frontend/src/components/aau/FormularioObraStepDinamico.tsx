@@ -71,11 +71,15 @@ const FormularioObraStepDinamico = ({ producto, datosIniciales, onContinuar, onV
 
     // Lógica de campos condicionales
     if (campo.grupo === 'derivada') {
+      // Buscar el valor en "indique_si_es" (nuevo) o "caracter_obra" (antiguo)
+      const indiqueSiEs = valoresCampos['indique_si_es'];
       const caracterObra = valoresCampos['caracter_obra'];
-      if (!caracterObra) return false;
+      const valorCampo = indiqueSiEs || caracterObra;
+
+      if (!valorCampo) return false;
       // Puede ser string simple "Derivada" o con múltiples valores "Originaria|Derivada"
-      const caracterStr = String(caracterObra);
-      return caracterStr.includes('Derivada');
+      const valorStr = String(valorCampo);
+      return valorStr.includes('Derivada');
     }
 
     if (campo.grupo === 'publicada') {
@@ -210,9 +214,9 @@ const FormularioObraStepDinamico = ({ producto, datosIniciales, onContinuar, onV
           <div className="space-y-6">
             {/* Organizar campos por secciones */}
             {(() => {
-              // Filtrar TODOS los campos de tipo archivo - se manejan en sección separada
+              // Filtrar campos de tipo archivo y divisor - se manejan por separado
               const camposVisibles = camposDinamicos.filter((campo) =>
-                esCampoVisible(campo) && campo.tipo.nombre !== 'archivo'
+                esCampoVisible(campo) && campo.tipo.nombre !== 'archivo' && campo.tipo.nombre !== 'divisor'
               );
               const camposGenerales = camposVisibles.filter(c => c.orden <= 10);
               const camposAdicionales = camposVisibles.filter(c => c.orden > 10);
@@ -243,14 +247,17 @@ const FormularioObraStepDinamico = ({ producto, datosIniciales, onContinuar, onV
                     </div>
                   )}
 
-                  {/* Sección: Información Adicional */}
+                  {/* Sección: Información Adicional / Obra Derivada */}
                   {camposAdicionales.length > 0 && (
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                         <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        Información Adicional
+                        {/* Detectar si todos los campos adicionales son de derivada */}
+                        {camposAdicionales.every(c => c.grupo === 'derivada')
+                          ? 'Información de Obra Derivada'
+                          : 'Información Adicional'}
                       </h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {camposAdicionales.map((campo) => (

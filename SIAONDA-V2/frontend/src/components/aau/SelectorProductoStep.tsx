@@ -38,26 +38,57 @@ const SelectorProductoStep = ({ onProductoSeleccionado, onVolver }: Props) => {
     }
   };
 
-  // Obtener categorías únicas
-  const categorias = Array.from(new Set(productos.map(p => p.categoria))).sort();
+  // Función para normalizar nombres de categorías
+  const normalizarCategoria = (categoria: string): string => {
+    const mapeo: Record<string, string> = {
+      'ACTOS_CONTRATOS': 'Actos y Contratos',
+      'Arte Aplicado': 'Artes Aplicadas',
+      'Artes Visuales': 'Artes Visuales',
+      'Audiovisual': 'Audiovisual',
+      'COLECCIONES': 'Colecciones', // Se filtrará después
+      'Científica': 'Científica',
+      'Escénica': 'Escénica',
+      'Inspectoría': 'Inspectoría',
+      'Literaria': 'Literaria',
+      'Musical': 'Musical',
+      'PRODUCCIONES': 'Producciones'
+    };
+    return mapeo[categoria] || categoria;
+  };
+
+  // Obtener categorías únicas, normalizadas y filtradas (sin COLECCIONES)
+  const categorias = Array.from(
+    new Set(
+      productos
+        .map(p => p.categoria)
+        .filter(c => c !== 'COLECCIONES') // Filtrar COLECCIONES
+    )
+  )
+    .sort()
+    .map(cat => normalizarCategoria(cat));
 
   // Filtrar productos
   const productosFiltrados = productos.filter(p => {
+    // Filtrar productos de COLECCIONES
+    if (p.categoria === 'COLECCIONES') return false;
+
     const coincideBusqueda =
       p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
       p.codigo.toLowerCase().includes(busqueda.toLowerCase());
 
-    const coincideCategoria = !categoriaFiltro || p.categoria === categoriaFiltro;
+    const categoriaNormalizada = normalizarCategoria(p.categoria);
+    const coincideCategoria = !categoriaFiltro || categoriaNormalizada === categoriaFiltro;
 
     return coincideBusqueda && coincideCategoria;
   });
 
-  // Agrupar por categoría
+  // Agrupar por categoría (usando nombres normalizados)
   const productosAgrupados = productosFiltrados.reduce((acc, producto) => {
-    if (!acc[producto.categoria]) {
-      acc[producto.categoria] = [];
+    const categoriaNormalizada = normalizarCategoria(producto.categoria);
+    if (!acc[categoriaNormalizada]) {
+      acc[categoriaNormalizada] = [];
     }
-    acc[producto.categoria].push(producto);
+    acc[categoriaNormalizada].push(producto);
     return acc;
   }, {} as Record<string, Producto[]>);
 

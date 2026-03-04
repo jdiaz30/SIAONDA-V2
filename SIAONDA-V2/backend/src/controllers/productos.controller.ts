@@ -77,11 +77,29 @@ export const getCamposProducto = asyncHandler(async (req: Request, res: Response
     throw new AppError('Producto no encontrado', 404);
   }
 
+  // Si es un producto de producción (-P), buscar el producto base
+  let productoParaCampos = productoId;
+
+  if (producto.codigo.endsWith('-P')) {
+    // Obtener código del producto base (ej: MUS-02-P -> MUS-02)
+    const codigoBase = producto.codigo.replace(/-P$/, '');
+
+    // Buscar producto base
+    const productoBase = await prisma.producto.findFirst({
+      where: { codigo: codigoBase }
+    });
+
+    if (productoBase) {
+      productoParaCampos = productoBase.id;
+    }
+    // Si no encuentra el producto base, usa el productoId original (fallback)
+  }
+
   // Obtener campos específicos del producto y campos globales
   const campos = await prisma.formularioCampo.findMany({
     where: {
       OR: [
-        { productoId },
+        { productoId: productoParaCampos },
         { productoId: null } // Campos globales
       ],
       activo: true

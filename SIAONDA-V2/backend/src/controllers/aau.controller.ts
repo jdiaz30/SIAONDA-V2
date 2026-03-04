@@ -1246,11 +1246,11 @@ export const corregirYReenviarIRC = asyncHandler(async (req: Request, res: Respo
 // Crear formulario IRC desde AaU (CON generación automática de factura)
 export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Response) => {
   // Parsear JSON si viene de FormData
-  const tipoSolicitud = req.body.tipoSolicitud;
-  const empresaId = req.body.empresaId ? parseInt(req.body.empresaId) : null;
-  const empresaData = req.body.empresaData ? JSON.parse(req.body.empresaData) : null;
-  const empresaDataActualizada = req.body.empresaDataActualizada ? JSON.parse(req.body.empresaDataActualizada) : null;
-  const clienteId = req.body.clienteId ? parseInt(req.body.clienteId) : null;
+  const tipoSolicitud = req.body.tipoSolicitud as string;
+  const empresaId: number | null = req.body.empresaId ? parseInt(req.body.empresaId as string) : null;
+  const empresaData = req.body.empresaData ? JSON.parse(req.body.empresaData as string) : null;
+  const empresaDataActualizada = req.body.empresaDataActualizada ? JSON.parse(req.body.empresaDataActualizada as string) : null;
+  const clienteId: number | null = req.body.clienteId ? parseInt(req.body.clienteId as string) : null;
 
   // Obtener archivos adjuntos
   const archivos = req.files as Express.Multer.File[];
@@ -1352,13 +1352,13 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
                 rutaArchivo: `/uploads/${path.basename(path.dirname(archivo.path))}/${archivo.filename}`,
                 tamano: archivo.size,
                 mimeType: archivo.mimetype,
-                cargadoPorId: req.usuario?.id || 1
+                cargadoPorId: (req as AuthRequest).usuario?.id || 1
               }
             });
           }
         }
       }
-    } else if (empresaDataActualizada) {
+    } else if (empresaDataActualizada && empresaId) {
       // Si es renovación y hay datos actualizados, actualizar empresa
       await prisma.empresaInspeccionada.update({
         where: { id: empresaId },
@@ -1387,15 +1387,22 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
     }
     const codigo = `${prefix}${numero.toString().padStart(4, '0')}`;
 
-    // Obtener datos de la empresa
-    const empresa = await prisma.empresaInspeccionada.findUnique({
-      where: { id: empresaIdFinal },
-      include: { categoriaIrc: true }
+    // Obtener datos de la empresa CON su categoría IRC
+    const empresaResult = await prisma.empresaInspeccionada.findUnique({
+      where: { id: empresaIdFinal! },
+      include: {
+        categoriaIrc: true
+      }
     });
 
-    if (!empresa) {
-      throw new Error('Empresa no encontrada');
+    if (!empresaResult || !empresaResult.categoriaIrc) {
+      throw new Error('Empresa no encontrada o sin categoría IRC asignada');
     }
+
+    // Type assertion para incluir categoriaIrc en el tipo
+    const empresa = empresaResult as typeof empresaResult & {
+      categoriaIrc: NonNullable<typeof empresaResult.categoriaIrc>
+    };
 
     // Buscar cliente existente por RNC o identificación
     const identificacionBusqueda = empresa.tipoPersona === 'FISICA' && empresa.cedulaPropietario
@@ -1550,7 +1557,7 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
         data: {
           codigo: codigo,
           fecha: new Date(),
-          usuarioId: req.usuario?.id!,
+          usuarioId: (req as AuthRequest).usuario?.id || 1,
           estadoId: estadoFormulario.id,
           esProduccion: false,
           solicitudIrcId: solicitud.id,

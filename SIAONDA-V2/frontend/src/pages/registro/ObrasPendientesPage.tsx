@@ -441,6 +441,11 @@ const ObrasPendientesPage = () => {
                       <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm font-medium rounded-full">
                         {obra.tipoObra}
                       </span>
+                      {obra.formularioProducto?.subcategoria && (
+                        <span className="px-3 py-1 bg-purple-100 text-purple-800 text-sm font-semibold rounded-full">
+                          {obra.formularioProducto.subcategoria}
+                        </span>
+                      )}
                       <span className="font-mono text-sm text-gray-500">
                         {obra.numeroRegistro}
                       </span>

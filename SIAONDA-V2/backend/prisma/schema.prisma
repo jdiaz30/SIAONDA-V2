@@ -313,6 +313,7 @@ model FormularioProducto {
   productoId      Int       @map("producto_id")
   productoMadreId Int?      @map("producto_madre_id")
   cantidad        Int       @default(1)
+  subcategoria    String?   @db.VarChar(200) // Para productos con múltiples subcategorías
 
   formulario      Formulario              @relation(fields: [formularioId], references: [id], onDelete: Cascade)
   producto        Producto                @relation("FormularioProductos", fields: [productoId], references: [id])
@@ -362,6 +363,7 @@ model FormularioCampo {
   titulo      String    @db.VarChar(200)  // título visible
   descripcion String?   @db.Text
   placeholder String?   @db.VarChar(255) // Texto de ejemplo
+  opciones    String?   @db.Text // Para tipo listado, opciones separadas por coma
   requerido   Boolean   @default(false)
   orden       Int       @default(0)
   activo      Boolean   @default(true)

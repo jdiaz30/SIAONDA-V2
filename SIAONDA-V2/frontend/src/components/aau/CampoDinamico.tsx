@@ -12,6 +12,7 @@ interface Campo {
   titulo: string;
   descripcion: string | null;
   placeholder: string | null;
+  opciones: string | null;
   requerido: boolean;
   orden: number;
   grupo: string | null;
@@ -104,8 +105,10 @@ const CampoDinamico = ({ campo, valor, onChange, visible = true }: Props) => {
         );
 
       case 'listado':
-        // Las opciones están en descripcion separadas por |
-        const opciones = campo.descripcion ? campo.descripcion.split('|') : [];
+        // Las opciones están en el campo opciones separadas por coma, o en descripcion separadas por |
+        const opcionesStr = campo.opciones || campo.descripcion || '';
+        const separador = campo.opciones ? ',' : '|';
+        const opciones = opcionesStr ? opcionesStr.split(separador) : [];
         return (
           <select
             id={campo.campo}

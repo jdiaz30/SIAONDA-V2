@@ -77,11 +77,22 @@ async function main() {
   // 4. Estados de Formulario
   console.log('📋 Creando estados de formulario...');
   const estadosFormulario = [
+    { nombre: 'PENDIENTE', descripcion: 'Formulario pendiente' },
     { nombre: 'Pendiente', descripcion: 'Formulario pendiente de pago' },
-    { nombre: 'Pagado', descripcion: 'Formulario pagado, pendiente de asentamiento' },
-    { nombre: 'Asentado', descripcion: 'Formulario asentado en registro' },
+    { nombre: 'PENDIENTE_PAGO', descripcion: 'Formulario pendiente de pago' },
+    { nombre: 'Pagado', descripcion: 'Formulario pagado' },
+    { nombre: 'PAGADO', descripcion: 'Formulario pagado' },
+    { nombre: 'Asentado', descripcion: 'Formulario asentado' },
+    { nombre: 'ASENTADO', descripcion: 'Formulario asentado en registro' },
     { nombre: 'Certificado', descripcion: 'Certificado generado' },
-    { nombre: 'Entregado', descripcion: 'Certificado entregado al cliente' }
+    { nombre: 'CERTIFICADO', descripcion: 'Certificado generado' },
+    { nombre: 'Entregado', descripcion: 'Certificado entregado' },
+    { nombre: 'ENTREGADO', descripcion: 'Certificado entregado al cliente' },
+    { nombre: 'DEVUELTO', descripcion: 'Formulario devuelto para correcciones' },
+    { nombre: 'DEVUELTO_AAU', descripcion: 'Devuelto a AAU' },
+    { nombre: 'EN_REVISION', descripcion: 'En revisión' },
+    { nombre: 'EN_REVISION_REGISTRO', descripcion: 'En revisión de registro' },
+    { nombre: 'LISTO_PARA_ENTREGA', descripcion: 'Listo para entrega' }
   ];
 
   for (const estado of estadosFormulario) {

@@ -200,6 +200,14 @@ export default function DetalleFormularioModal({
                 <span className="text-gray-700 font-medium">Tipo:</span>
                 <p className="text-gray-900">{registro.tipoObra}</p>
               </div>
+              {registro.formularioProducto.subcategoria && (
+                <div>
+                  <span className="text-gray-700 font-medium">Subcategoría:</span>
+                  <p className="text-gray-900 font-semibold text-blue-600">
+                    {registro.formularioProducto.subcategoria}
+                  </p>
+                </div>
+              )}
               <div>
                 <span className="text-gray-700 font-medium">Categoría:</span>
                 <p className="text-gray-900">{registro.formularioProducto.producto.categoria}</p>

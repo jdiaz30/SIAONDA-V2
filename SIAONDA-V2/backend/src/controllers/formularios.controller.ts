@@ -799,11 +799,16 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
     }
 
     // 3. Asociar el producto
+    // Extraer subcategoría si existe en los campos específicos
+    const subcategoria = datosObra.camposEspecificos?.subcategoria ||
+                        datosObra.camposEspecificos?.campo_subcategoria;
+
     await tx.formularioProducto.create({
       data: {
         formularioId: nuevoFormulario.id,
         productoId: producto.id,
-        cantidad: 1
+        cantidad: 1,
+        subcategoria: subcategoria || null
       }
     });
 
@@ -960,11 +965,16 @@ export const createFormularioObrasMultiple = asyncHandler(async (req: AuthReques
 
     // 3. Crear FormularioProducto por CADA obra en el carrito
     for (const { productoId, datosObra, precio } of productosValidados) {
+      // Extraer subcategoría si existe
+      const subcategoria = datosObra.camposEspecificos?.subcategoria ||
+                          datosObra.camposEspecificos?.campo_subcategoria;
+
       const formularioProducto = await tx.formularioProducto.create({
         data: {
           formularioId: nuevoFormulario.id,
           productoId,
-          cantidad: 1
+          cantidad: 1,
+          subcategoria: subcategoria || null
         }
       });
 
