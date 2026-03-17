@@ -10,6 +10,22 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
     throw new AppError('No autenticado', 401);
   }
 
+  // Obtener caja activa del usuario para filtrar por sucursal
+  const cajaActiva = await prisma.caja.findFirst({
+    where: {
+      usuarioId: req.usuario.id,
+      estado: { nombre: 'Abierta' }
+    },
+    include: {
+      sucursal: true
+    }
+  });
+
+  // Filtro por sucursal (solo si la caja tiene sucursal asignada)
+  const filtroSucursal = cajaActiva?.sucursalId
+    ? { sucursalId: cajaActiva.sucursalId }
+    : {};
+
   // 1. Solicitudes IRC pendientes de pago (PENDIENTE_PAGO)
   const solicitudesIrc = await prisma.solicitudRegistroInspeccion.findMany({
     where: {
@@ -61,7 +77,8 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
           }
         }
       ],
-      produccionPadreId: null // Excluir obras hijas de producciones
+      produccionPadreId: null, // Excluir obras hijas de producciones
+      ...filtroSucursal // Filtrar por sucursal de la caja activa
     },
     include: {
       estado: true,
@@ -86,7 +103,8 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
           empresa: true,
           categoriaIrc: true
         }
-      }
+      },
+      sucursal: true // Incluir info de sucursal
     },
     orderBy: { fecha: 'desc' }
   });
@@ -283,7 +301,7 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
       // Usar SELECT FOR UPDATE para bloquear la fila durante la transacción
       const secuencias = await tx.$queryRaw<any[]>`
         SELECT * FROM "secuencias_ncf"
-        WHERE "tipo_comprobante" = ${tipoComprobante}
+        WHERE "tipoComprobante" = ${tipoComprobante}
           AND "activo" = true
           AND "fecha_vencimiento" >= NOW()
         ORDER BY "fecha_vencimiento" DESC
@@ -304,12 +322,12 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
       }
 
       const numeroActual = Number(secuenciaDisponible.numero_actual) + 1;
-      const ncf = `${secuenciaDisponible.serie}${secuenciaDisponible.tipo_comprobante}${numeroActual.toString().padStart(8, '0')}`;
+      const ncf = `${secuenciaDisponible.serie}${secuenciaDisponible.tipoComprobante}${numeroActual.toString().padStart(8, '0')}`;
 
       // Actualizar el número actual dentro de la misma transacción
       await tx.secuenciaNcf.update({
         where: { id: secuenciaDisponible.id },
-        data: { numeroActual: numeroActual.toString() }
+        data: { numeroActual: BigInt(numeroActual) }
       });
 
       return ncf;
@@ -615,7 +633,43 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
             c.campo.campo.toLowerCase().includes('titulo') ||
             c.campo.campo.toLowerCase().includes('título')
           );
-          const tituloObra = campoTituloObra?.valor || `${producto.producto.nombre} - Formulario ${formulario.codigo}`;
+
+          // Buscar campo de subtipo - puede ser "tipo_obra" o "subcategoria" dependiendo del producto
+          const campoSubtipo = producto.campos?.find(c =>
+            c.campo.campo === 'tipo_obra' || c.campo.campo === 'subcategoria'
+          );
+
+          // DEBUG: Ver todos los campos disponibles
+          console.log('🔍 COBROS - Campos disponibles en producto:', producto.campos?.map(c => ({
+            campo: c.campo.campo,
+            valor: c.valor
+          })));
+          console.log('🔍 COBROS - Campo subtipo encontrado:', campoSubtipo ? {
+            campo: campoSubtipo.campo.campo,
+            valor: campoSubtipo.valor
+          } : 'NO ENCONTRADO');
+
+          // Normalizar a mayúsculas para consistencia en certificados
+          const tituloObra = (campoTituloObra?.valor || `${producto.producto.nombre} - Formulario ${formulario.codigo}`).toUpperCase();
+          const subtipoObra = campoSubtipo?.valor ? campoSubtipo.valor.toUpperCase() : null;
+
+          console.log('🔍 COBROS - subtipoObra final:', subtipoObra);
+
+          // Para tipoObra: usar categoría general en lugar del nombre del producto
+          const categoriaMap: Record<string, string> = {
+            'Literaria': 'OBRA LITERARIA',
+            'Musical': 'OBRA MUSICAL',
+            'Audiovisual': 'OBRA AUDIOVISUAL',
+            'Artes Visuales': 'OBRA DE ARTES VISUALES',
+            'Escénica': 'OBRA ESCÉNICA',
+            'Científica': 'OBRA CIENTÍFICA',
+            'Arte Aplicado': 'OBRA DE ARTE APLICADO',
+            'ACTOS_CONTRATOS': 'ACTO O CONTRATO',
+            'PRODUCCIONES': 'PRODUCCIÓN',
+            'Inspectoría': 'INSCRIPCIÓN IRC'
+          };
+
+          const tipoObraCategoria = categoriaMap[producto.producto.categoria] || producto.producto.categoria.toUpperCase();
 
           // Generar número de registro
           const anioActual = new Date().getFullYear();
@@ -635,7 +689,8 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
             data: {
               numeroRegistro,
               formularioProductoId: producto.id,
-              tipoObra: producto.producto.nombre,
+              tipoObra: tipoObraCategoria,
+              subtipoObra,
               tituloObra,
               estadoId: estadoPendienteAsentamiento.id,
               usuarioAsentamientoId: req.usuario!.id
@@ -796,6 +851,31 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
           console.log('Título final asignado:', tituloObra);
           console.log('=====================================');
 
+          // Buscar campo de subtipo - puede ser "tipo_obra" o "subcategoria" dependiendo del producto
+          const campoSubtipo = producto.campos.find(c =>
+            c.campo.campo === 'tipo_obra' || c.campo.campo === 'subcategoria'
+          );
+
+          // Normalizar a mayúsculas para consistencia en certificados
+          tituloObra = tituloObra.toUpperCase();
+          const subtipoObra = campoSubtipo?.valor ? campoSubtipo.valor.toUpperCase() : null;
+
+          // Para tipoObra: usar categoría general en lugar del nombre del producto
+          const categoriaMap: Record<string, string> = {
+            'Literaria': 'OBRA LITERARIA',
+            'Musical': 'OBRA MUSICAL',
+            'Audiovisual': 'OBRA AUDIOVISUAL',
+            'Artes Visuales': 'OBRA DE ARTES VISUALES',
+            'Escénica': 'OBRA ESCÉNICA',
+            'Científica': 'OBRA CIENTÍFICA',
+            'Arte Aplicado': 'OBRA DE ARTE APLICADO',
+            'ACTOS_CONTRATOS': 'ACTO O CONTRATO',
+            'PRODUCCIONES': 'PRODUCCIÓN',
+            'Inspectoría': 'INSCRIPCIÓN IRC'
+          };
+
+          const tipoObraCategoria = categoriaMap[producto.producto.categoria] || producto.producto.categoria.toUpperCase();
+
           // Generar número de registro
           const anioActual = new Date().getFullYear();
           const mesActual = (new Date().getMonth() + 1).toString().padStart(2, '0');
@@ -813,7 +893,8 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
             data: {
               numeroRegistro,
               formularioProductoId: producto.id,
-              tipoObra: producto.producto.nombre,
+              tipoObra: tipoObraCategoria,
+              subtipoObra,
               tituloObra,
               estadoId: estadoPendienteAsentamiento.id,
               usuarioAsentamientoId: req.usuario!.id
@@ -853,13 +934,56 @@ export const getHistorialCobros = asyncHandler(async (req: AuthRequest, res: Res
     throw new AppError('No autenticado', 401);
   }
 
-  // Obtener facturas recientes de la caja del usuario
+  // Parámetros de consulta
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 50;
+  const skip = (page - 1) * limit;
+
+  // Filtros de fecha
+  const fechaInicio = req.query.fechaInicio ? new Date(req.query.fechaInicio as string) : undefined;
+  const fechaFin = req.query.fechaFin ? new Date(req.query.fechaFin as string) : undefined;
+
+  // Búsqueda
+  const busqueda = req.query.busqueda as string;
+
+  // Construir filtros - Mostrar todas las facturas pagadas del sistema
+  const where: any = {
+    estado: {
+      nombre: 'Pagada'
+    }
+  };
+
+  // Filtro de fechas
+  if (fechaInicio || fechaFin) {
+    where.fecha = {};
+    if (fechaInicio) {
+      where.fecha.gte = fechaInicio;
+    }
+    if (fechaFin) {
+      // Agregar 1 día para incluir todo el día final
+      const fechaFinConHora = new Date(fechaFin);
+      fechaFinConHora.setHours(23, 59, 59, 999);
+      where.fecha.lte = fechaFinConHora;
+    }
+  }
+
+  // DEBUG: Log de filtros
+  console.log('═══════════════════════════════════════');
+  console.log('DEBUG - Historial de Cobros');
+  console.log('Usuario ID:', req.usuario.id);
+  console.log('Página:', page);
+  console.log('Límite:', limit);
+  console.log('Fecha Inicio:', fechaInicio);
+  console.log('Fecha Fin:', fechaFin);
+  console.log('Filtro WHERE:', JSON.stringify(where, null, 2));
+
+  // Contar total de facturas
+  const total = await prisma.factura.count({ where });
+  console.log('Total facturas encontradas:', total);
+
+  // Obtener facturas con paginación
   const facturas = await prisma.factura.findMany({
-    where: {
-      caja: {
-        usuarioId: req.usuario.id
-      }
-    },
+    where,
     include: {
       items: true,
       estado: true,
@@ -885,7 +1009,8 @@ export const getHistorialCobros = asyncHandler(async (req: AuthRequest, res: Res
       }
     },
     orderBy: { fecha: 'desc' },
-    take: 100
+    skip,
+    take: limit
   });
 
   // Transformar a formato de cobros
@@ -933,11 +1058,25 @@ export const getHistorialCobros = asyncHandler(async (req: AuthRequest, res: Res
     };
   });
 
+  // Calcular estadísticas del historial (de toda la consulta, no solo la página actual)
+  const totalIrc = historial.filter(h => h.tipo === 'IRC').length;
+  const totalDenuncias = historial.filter(h => h.tipo === 'DENUNCIA').length;
+  const totalFormularios = historial.filter(h => h.tipo === 'FORMULARIO').length;
+  const montoTotal = historial.reduce((sum, h) => sum + h.monto, 0);
+
   res.json({
     success: true,
     data: {
       historial,
-      total: historial.length
+      total,
+      totalPagina: historial.length,
+      totalIrc,
+      totalDenuncias,
+      totalFormularios,
+      montoTotal,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
   });
 });

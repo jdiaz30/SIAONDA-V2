@@ -24,6 +24,7 @@ import denunciasRoutes from './routes/denuncias.routes';
 import registroRoutes from './routes/registro.routes';
 import reportesRoutes from './routes/reportes.routes';
 import produccionesRoutes from './routes/producciones.routes';
+import sucursalesRoutes from './routes/sucursales.routes';
 
 dotenv.config();
 
@@ -77,6 +78,7 @@ app.use('/api/denuncias', denunciasRoutes);
 app.use('/api/registro', registroRoutes);
 app.use('/api/reportes', reportesRoutes);
 app.use('/api/producciones', produccionesRoutes);
+app.use('/api/sucursales', sucursalesRoutes);
 
 // Error handling
 app.use(errorHandler);

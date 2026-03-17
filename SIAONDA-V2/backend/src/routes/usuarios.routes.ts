@@ -10,6 +10,11 @@ import {
   restablecerContrasena,
   getTiposUsuario
 } from '../controllers/usuarios.controller';
+import {
+  moverUsuarioAEvento,
+  restaurarSucursalOriginal,
+  getUsuariosEnEventos
+} from '../controllers/usuarios-sucursal.controller';
 
 const router = Router();
 
@@ -19,11 +24,16 @@ router.use(authenticate);
 // Solo administradores pueden gestionar usuarios
 router.get('/', authorize('Administrador'), getUsuarios);
 router.get('/tipos', authorize('Administrador'), getTiposUsuario);
+router.get('/en-eventos', authorize('Administrador'), getUsuariosEnEventos);
 router.get('/:id', authorize('Administrador'), getUsuario);
 router.post('/', authorize('Administrador'), createUsuario);
 router.put('/:id', authorize('Administrador'), updateUsuario);
 router.delete('/:id', authorize('Administrador'), deleteUsuario);
 router.post('/:id/restablecer-contrasena', authorize('Administrador'), restablecerContrasena);
+
+// Gestión de eventos temporales (solo administradores)
+router.post('/:id/mover-a-evento', authorize('Administrador'), moverUsuarioAEvento);
+router.post('/:id/restaurar-sucursal', authorize('Administrador'), restaurarSucursalOriginal);
 
 // Cualquier usuario puede cambiar su propia contraseña
 router.post('/cambiar-contrasena', cambiarContrasena);

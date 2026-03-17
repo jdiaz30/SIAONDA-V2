@@ -42,54 +42,65 @@ const generateCodigoFactura = async (): Promise<string> => {
 };
 
 // Generar NCF (Número de Comprobante Fiscal)
-// Formato: E310000000001 (E31 = Factura de crédito fiscal, seguido de 9 dígitos secuenciales)
+// Formato correcto: SERIE + TIPO + NÚMERO (8 dígitos)
+// Ejemplo: EB0100000001 (E=serie electrónico, B01=tipo comprobante, 00000001=número secuencial)
 const generateNCF = async (tipoComprobante: string = 'B02'): Promise<string> => {
-  // Buscar secuencia activa disponible para el tipo de comprobante
-  const secuencia = await prisma.secuenciaNcf.findFirst({
-    where: {
-      tipoComprobante,
-      activo: true,
-      numeroActual: {
-        lt: prisma.secuenciaNcf.fields.numeroFinal
-      },
-      fechaVencimiento: {
-        gte: new Date()
+  // Usar transacción con nivel de aislamiento Serializable para evitar race conditions
+  // Esto previene que dos solicitudes concurrentes generen el mismo NCF
+  return await prisma.$transaction(async (tx) => {
+    // Buscar todas las secuencias activas de este tipo usando SELECT FOR UPDATE
+    // FOR UPDATE bloquea las filas durante la transacción, previniendo race conditions
+    const secuencias = await tx.$queryRaw<any[]>`
+      SELECT * FROM "secuencias_ncf"
+      WHERE "tipoComprobante" = ${tipoComprobante}
+        AND "activo" = true
+        AND "fecha_vencimiento" >= NOW()
+      ORDER BY "fecha_vencimiento" DESC
+      FOR UPDATE
+    `;
+
+    // Encontrar la primera secuencia que aún tenga números disponibles
+    let secuenciaDisponible = null;
+    for (const sec of secuencias) {
+      if (Number(sec.numero_actual) < Number(sec.numero_final)) {
+        secuenciaDisponible = sec;
+        break;
       }
-    },
-    orderBy: {
-      numeroActual: 'asc'
     }
+
+    if (!secuenciaDisponible) {
+      throw new AppError(
+        `No hay secuencias NCF activas disponibles para ${tipoComprobante}. Por favor, configure una nueva secuencia.`,
+        400
+      );
+    }
+
+    // Verificar si la secuencia está por agotarse (menos de 10 números disponibles)
+    const numerosRestantes = Number(secuenciaDisponible.numero_final) - Number(secuenciaDisponible.numero_actual);
+    if (numerosRestantes < 10) {
+      console.warn(
+        `⚠️ ADVERTENCIA: La secuencia NCF ${secuenciaDisponible.tipoComprobante}${secuenciaDisponible.serie} está por agotarse. Quedan ${numerosRestantes} números disponibles.`
+      );
+    }
+
+    // Incrementar el número actual
+    const numeroActual = Number(secuenciaDisponible.numero_actual) + 1;
+
+    // Formatear NCF: SERIE + TIPO + NÚMERO (8 dígitos)
+    // Ejemplo: EB0100000001
+    const ncf = `${secuenciaDisponible.serie}${secuenciaDisponible.tipoComprobante}${numeroActual.toString().padStart(8, '0')}`;
+
+    // Actualizar el número actual dentro de la misma transacción
+    await tx.secuenciaNcf.update({
+      where: { id: secuenciaDisponible.id },
+      data: { numeroActual: BigInt(numeroActual) }
+    });
+
+    return ncf;
+  }, {
+    isolationLevel: 'Serializable', // Nivel más alto de aislamiento para prevenir race conditions
+    timeout: 10000 // 10 segundos timeout
   });
-
-  if (!secuencia) {
-    throw new AppError(
-      `No hay secuencias NCF disponibles para el tipo ${tipoComprobante}. Por favor, configure una nueva secuencia.`,
-      500
-    );
-  }
-
-  // Verificar si la secuencia está por agotarse (menos de 10 números disponibles)
-  const numerosRestantes = Number(secuencia.numeroFinal - secuencia.numeroActual);
-  if (numerosRestantes < 10) {
-    console.warn(
-      `⚠️ ADVERTENCIA: La secuencia NCF ${tipoComprobante}${secuencia.serie} está por agotarse. Quedan ${numerosRestantes} números disponibles.`
-    );
-  }
-
-  // Incrementar el número actual
-  const siguienteNumero = secuencia.numeroActual + BigInt(1);
-
-  // Actualizar la secuencia en la base de datos
-  await prisma.secuenciaNcf.update({
-    where: { id: secuencia.id },
-    data: { numeroActual: siguienteNumero }
-  });
-
-  // Formatear NCF: TIPO + SERIE + NÚMERO (8 dígitos)
-  // Ejemplo: B02E00000001
-  const ncf = `${tipoComprobante}${secuencia.serie}${siguienteNumero.toString().padStart(8, '0')}`;
-
-  return ncf;
 };
 
 // GET /api/facturas

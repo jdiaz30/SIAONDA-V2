@@ -230,7 +230,8 @@ export const abrirCaja = asyncHandler(async (req: AuthRequest, res: Response) =>
         esGratuita: data.esGratuita || false,
         motivoGratuito: data.motivoGratuito || null,
         estadoId: estadoAbierta.id,
-        usuarioId: req.usuario!.id
+        usuarioId: req.usuario!.id,
+        sucursalId: req.usuario!.sucursalId || null // Hereda sucursal del usuario automáticamente
       }
     });
 
@@ -261,6 +262,7 @@ export const abrirCaja = asyncHandler(async (req: AuthRequest, res: Response) =>
           nombrecompleto: true
         }
       },
+      sucursal: true,
       cierres: true
     }
   });
@@ -516,6 +518,11 @@ export const getCajaActiva = asyncHandler(async (req: AuthRequest, res: Response
           nombrecompleto: true
         }
       },
+      facturas: {
+        select: {
+          total: true
+        }
+      },
       _count: {
         select: {
           facturas: true
@@ -524,7 +531,24 @@ export const getCajaActiva = asyncHandler(async (req: AuthRequest, res: Response
     }
   });
 
-  res.json(caja);
+  if (!caja) {
+    res.json(null);
+    return;
+  }
+
+  // Calcular el total de facturas
+  const totalFacturas = caja.facturas.reduce((sum, factura) => {
+    return sum + Number(factura.total);
+  }, 0);
+
+  // Devolver la caja con el total calculado
+  const cajaConTotal = {
+    ...caja,
+    totalFacturas,
+    facturas: undefined // No enviar todas las facturas al frontend, solo el total
+  };
+
+  res.json(cajaConTotal);
 });
 
 // GET /api/cajas/estados
@@ -563,6 +587,223 @@ export const deleteCaja = asyncHandler(async (req: Request, res: Response) => {
   await prisma.caja.delete({ where: { id } });
 
   res.json({ message: 'Caja eliminada exitosamente' });
+});
+
+// ============================================================================
+// FACTURAS MANUALES - Para servicios fuera de AAU
+// ============================================================================
+
+// Schema de validación para crear factura manual
+const crearFacturaManualSchema = z.object({
+  cliente: z.object({
+    nombre: z.string().min(1),
+    identificacion: z.string().optional(),
+    rnc: z.string().optional()
+  }),
+  items: z.array(z.object({
+    concepto: z.string().min(1),
+    cantidad: z.number().int().min(1),
+    precioUnitario: z.number().min(0)
+  })).min(1),
+  metodoPago: z.string().min(1),
+  referenciaPago: z.string().optional(),
+  requiereNCF: z.boolean().optional().default(false),
+  observaciones: z.string().optional()
+}).refine(
+  (data) => {
+    // Si requiere NCF, debe tener RNC
+    if (data.requiereNCF && !data.cliente.rnc?.trim()) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "Si requiere NCF, debe proporcionar el RNC del cliente",
+    path: ["cliente", "rnc"]
+  }
+);
+
+// POST /api/cajas/factura-manual
+// Crear factura manual para servicios como cotizaciones, copias, etc.
+export const crearFacturaManual = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  const data = crearFacturaManualSchema.parse(req.body);
+
+  // Verificar que el usuario tenga una caja abierta
+  const cajaActiva = await prisma.caja.findFirst({
+    where: {
+      usuarioId: req.usuario.id,
+      estado: {
+        nombre: 'Abierta'
+      }
+    }
+  });
+
+  if (!cajaActiva) {
+    throw new AppError('Debes tener una caja abierta para crear facturas', 400);
+  }
+
+  // Generar código de factura
+  const generateCodigoFactura = async (): Promise<string> => {
+    const now = new Date();
+    const año = now.getFullYear();
+    const mes = (now.getMonth() + 1).toString().padStart(2, '0');
+    const dia = now.getDate().toString().padStart(2, '0');
+    const fecha = `${año}${mes}${dia}`;
+
+    // Retry hasta 5 veces si hay colisión
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const count = await prisma.factura.count({
+        where: {
+          fecha: {
+            gte: new Date(año, now.getMonth(), now.getDate(), 0, 0, 0),
+            lt: new Date(año, now.getMonth(), now.getDate() + 1, 0, 0, 0)
+          }
+        }
+      });
+
+      const numero = (count + 1 + attempt).toString().padStart(4, '0');
+      const codigo = `FAC-${fecha}-${numero}`;
+
+      // Verificar que no exista
+      const existe = await prisma.factura.findUnique({
+        where: { codigo }
+      });
+
+      if (!existe) {
+        return codigo;
+      }
+
+      // Si existe, esperar un tiempo aleatorio antes de reintentar
+      await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
+    }
+
+    // Fallback: usar timestamp
+    const timestamp = Date.now().toString().slice(-4);
+    return `FAC-${fecha}-${timestamp}`;
+  };
+
+  // Generar NCF si se requiere
+  const generateNCF = async (tipoComprobante: string = 'B01'): Promise<string | null> => {
+    return await prisma.$transaction(async (tx) => {
+      const secuencias = await tx.$queryRaw<any[]>`
+        SELECT * FROM "secuencias_ncf"
+        WHERE "tipoComprobante" = ${tipoComprobante}
+          AND "activo" = true
+          AND "fecha_vencimiento" >= NOW()
+        ORDER BY "fecha_vencimiento" DESC
+        FOR UPDATE
+      `;
+
+      let secuenciaDisponible = null;
+      for (const sec of secuencias) {
+        if (Number(sec.numero_actual) < Number(sec.numero_final)) {
+          secuenciaDisponible = sec;
+          break;
+        }
+      }
+
+      if (!secuenciaDisponible) {
+        throw new AppError(`No hay secuencias NCF activas disponibles para ${tipoComprobante}`, 400);
+      }
+
+      const numeroActual = Number(secuenciaDisponible.numero_actual) + 1;
+      const ncf = `${secuenciaDisponible.serie}${secuenciaDisponible.tipoComprobante}${numeroActual.toString().padStart(8, '0')}`;
+
+      await tx.secuenciaNcf.update({
+        where: { id: secuenciaDisponible.id },
+        data: { numeroActual: BigInt(numeroActual) }
+      });
+
+      return ncf;
+    }, {
+      isolationLevel: 'Serializable',
+      timeout: 10000
+    });
+  };
+
+  const codigo = await generateCodigoFactura();
+
+  let ncf: string | null = null;
+  if (data.requiereNCF) {
+    ncf = await generateNCF('B01');
+  }
+
+  // Calcular totales
+  const subtotal = data.items.reduce((sum, item) =>
+    sum + (item.precioUnitario * item.cantidad), 0
+  );
+  const itbis = 0; // ONDA no cobra ITBIS
+  const total = subtotal + itbis;
+
+  // Si la caja es gratuita, el total es 0
+  const montoFinal = cajaActiva.esGratuita ? 0 : total;
+
+  // Obtener estado Pagada
+  const estadoPagada = await prisma.facturaEstado.findFirst({
+    where: { nombre: 'Pagada' }
+  });
+
+  if (!estadoPagada) {
+    throw new AppError('Estado Pagada no encontrado', 500);
+  }
+
+  // Crear factura en transacción
+  const factura = await prisma.factura.create({
+    data: {
+      codigo,
+      ncf,
+      rnc: data.cliente.rnc || null,
+      fecha: new Date(),
+      subtotal: montoFinal,
+      itbis: 0,
+      descuento: 0,
+      total: montoFinal,
+      pagado: montoFinal,
+      fechaPago: new Date(),
+      metodoPago: data.metodoPago,
+      referenciaPago: data.referenciaPago || null,
+      observaciones: data.observaciones ?
+        `Cliente: ${data.cliente.nombre}\nID: ${data.cliente.identificacion || 'N/A'}\n\n${data.observaciones}` :
+        `Cliente: ${data.cliente.nombre}\nID: ${data.cliente.identificacion || 'N/A'}`,
+      estadoId: estadoPagada.id,
+      cajaId: cajaActiva.id,
+      cierreId: 0, // Se asociará al cerrar la caja
+      clienteId: null, // Factura manual sin cliente registrado
+      items: {
+        create: data.items.map(item => ({
+          concepto: item.concepto,
+          cantidad: item.cantidad,
+          precioUnitario: cajaActiva.esGratuita ? 0 : item.precioUnitario,
+          subtotal: cajaActiva.esGratuita ? 0 : item.precioUnitario * item.cantidad,
+          itbis: 0,
+          total: cajaActiva.esGratuita ? 0 : item.precioUnitario * item.cantidad
+        }))
+      }
+    },
+    include: {
+      items: true,
+      estado: true,
+      caja: {
+        select: {
+          codigo: true,
+          usuario: {
+            select: {
+              nombrecompleto: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  res.status(201).json({
+    message: 'Factura manual creada exitosamente',
+    factura
+  });
 });
 
 // ============================================================================

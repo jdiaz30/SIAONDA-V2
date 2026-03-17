@@ -6,7 +6,9 @@ import {
   getReporteProductividad,
   getReporteTiempos,
   getReporteCuellosBotella,
-  getDashboardGeneral
+  getDashboardGeneral,
+  getMetricasRegistros,
+  getDatosExportacionRegistros
 } from '../controllers/reportes.controller';
 
 const router = Router();
@@ -16,6 +18,12 @@ router.use(authenticate);
 
 // Dashboard general
 router.get('/dashboard', getDashboardGeneral);
+
+// Métricas de registros (nuevo)
+router.get('/metricas-registros', getMetricasRegistros);
+
+// Datos para exportación de registros (nuevo)
+router.get('/exportacion-registros', getDatosExportacionRegistros);
 
 // Reportes financieros
 router.get('/ingresos', getReporteIngresos);

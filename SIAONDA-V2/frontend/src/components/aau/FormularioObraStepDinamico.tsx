@@ -47,6 +47,17 @@ const FormularioObraStepDinamico = ({ producto, datosIniciales, onContinuar, onV
     const campoObj = camposDinamicos.find(c => c.campo === campo);
     const campoKey = campoObj ? `campo_${campoObj.id}` : campo;
 
+    // DEBUG: Log cuando se cambia tipo_obra
+    if (campo === 'tipo_obra') {
+      console.log('🔍 FormularioObraStepDinamico: handleCampoChange tipo_obra', {
+        campo,
+        valor,
+        campoObj: campoObj ? { id: campoObj.id, titulo: campoObj.titulo } : null,
+        campoKey,
+        estadoActual: valoresCampos
+      });
+    }
+
     setValoresCampos((prev) => ({
       ...prev,
       [campoKey]: valor,
@@ -141,6 +152,14 @@ const FormularioObraStepDinamico = ({ producto, datosIniciales, onContinuar, onV
         titulo: campo.titulo || campo.campo,
         tipo: campo.tipo?.nombre || 'texto'
       };
+    });
+
+    // DEBUG: Mostrar todos los campos antes de enviar
+    console.log('📤 FormularioObraStepDinamico: Datos a enviar', {
+      camposEspecificos: valoresCampos,
+      keys: Object.keys(valoresCampos),
+      tipoObraValue: valoresCampos['tipo_obra'],
+      camposCon_campo_: Object.keys(valoresCampos).filter(k => k.startsWith('campo_'))
     });
 
     onContinuar({

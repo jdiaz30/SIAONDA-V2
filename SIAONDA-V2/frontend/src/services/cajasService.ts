@@ -42,6 +42,23 @@ export interface AbrirCajaData {
   motivoGratuito?: string;
 }
 
+export interface FacturaManualData {
+  cliente: {
+    nombre: string;
+    identificacion?: string;
+    rnc?: string;
+  };
+  items: Array<{
+    concepto: string;
+    cantidad: number;
+    precioUnitario: number;
+  }>;
+  metodoPago: string;
+  referenciaPago?: string;
+  requiereNCF?: boolean;
+  observaciones?: string;
+}
+
 const cajasService = {
   // Obtener todas las cajas con paginación y filtros
   getCajas: async (params?: {
@@ -95,6 +112,12 @@ const cajasService = {
   // Eliminar una caja
   deleteCaja: async (id: number) => {
     const response = await api.delete(`/cajas/${id}`);
+    return response.data;
+  },
+
+  // Crear factura manual
+  crearFacturaManual: async (data: FacturaManualData) => {
+    const response = await api.post('/cajas/factura-manual', data);
     return response.data;
   }
 };

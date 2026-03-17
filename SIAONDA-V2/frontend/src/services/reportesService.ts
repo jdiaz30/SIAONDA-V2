@@ -103,6 +103,41 @@ export interface DashboardGeneral {
   cajasAbiertas: number;
 }
 
+export interface MetricasRegistros {
+  totalRegistros: number;
+  registrosPorEstado: Array<{ estado: string; cantidad: number }>;
+  usoIA: {
+    conIA: number;
+    sinIA: number;
+  };
+  certificados: {
+    generados: number;
+    entregados: number;
+    pendientes: number;
+  };
+  registrosPorTipo: Array<{ tipo: string; cantidad: number }>;
+  tendenciaMensual: Array<{ mes: string; cantidad: number }>;
+}
+
+export interface DatosExportacion {
+  fecha_formulario: string;
+  fecha_certificado: string | null;
+  estado: string;
+  codigo_formulario: string;
+  numero_obra: string;
+  codigo_producto: string;
+  producto: string;
+  nombre_obra: string;
+}
+
+export interface FiltrosReporte {
+  fechaInicio?: string;
+  fechaFin?: string;
+  tipoObra?: string;
+  estado?: string;
+  usoIA?: string;
+}
+
 const reportesService = {
   getDashboardGeneral: async (): Promise<DashboardGeneral> => {
     const response = await api.get('/reportes/dashboard');
@@ -140,6 +175,72 @@ const reportesService = {
   getReporteCuellosBotella: async (): Promise<ReporteCuellosBotella> => {
     const response = await api.get('/reportes/cuellos-botella');
     return response.data.data;
+  },
+
+  // NUEVOS ENDPOINTS PARA REPORTERÍA DE REGISTROS
+
+  getMetricasRegistros: async (filtros?: FiltrosReporte): Promise<MetricasRegistros> => {
+    const params = new URLSearchParams();
+    if (filtros?.fechaInicio) params.append('fechaInicio', filtros.fechaInicio);
+    if (filtros?.fechaFin) params.append('fechaFin', filtros.fechaFin);
+
+    const response = await api.get(`/reportes/metricas-registros?${params.toString()}`);
+    return response.data.data;
+  },
+
+  getDatosExportacion: async (filtros?: FiltrosReporte): Promise<DatosExportacion[]> => {
+    const params = new URLSearchParams();
+    if (filtros?.fechaInicio) params.append('fechaInicio', filtros.fechaInicio);
+    if (filtros?.fechaFin) params.append('fechaFin', filtros.fechaFin);
+    if (filtros?.tipoObra) params.append('tipoObra', filtros.tipoObra);
+    if (filtros?.estado) params.append('estado', filtros.estado);
+    if (filtros?.usoIA) params.append('usoIA', filtros.usoIA);
+
+    const response = await api.get(`/reportes/exportacion-registros?${params.toString()}`);
+    return response.data.data;
+  },
+
+  exportarExcel: async (filtros?: FiltrosReporte): Promise<void> => {
+    const datos = await reportesService.getDatosExportacion(filtros);
+
+    // Convertir a formato CSV compatible con Excel
+    const headers = [
+      'fecha_formulario',
+      'fecha_certificado',
+      'estado',
+      'codigo_formulario',
+      'numero_obra',
+      'codigo_producto',
+      'producto',
+      'nombre_obra'
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...datos.map(row => [
+        row.fecha_formulario ? new Date(row.fecha_formulario).toISOString().split('T')[0] : '',
+        row.fecha_certificado ? new Date(row.fecha_certificado).toISOString().split('T')[0] : '',
+        `"${row.estado}"`,
+        row.codigo_formulario,
+        row.numero_obra,
+        row.codigo_producto,
+        `"${row.producto}"`,
+        `"${row.nombre_obra}"`
+      ].join(','))
+    ].join('\n');
+
+    // Crear el blob y descargarlo
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    const fechaActual = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Reporte_Registros_${fechaActual}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 };
 

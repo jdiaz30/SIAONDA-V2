@@ -104,7 +104,7 @@ export function usePermissions() {
     const tipo = usuario?.tipo?.toUpperCase() || '';
 
     if (tipo === 'ADMINISTRADOR' || tipo === 'DIRECTOR') return 'TODOS';
-    if (tipo.includes('ATU') || tipo.includes('RECEPCIONISTA')) return 'ATU';
+    if (tipo.includes('ATU') || tipo.includes('RECEPCIONISTA') || tipo.includes('ATENCION_USUARIO')) return 'ATU';
     if (tipo.includes('REGISTRO') || tipo.includes('ASENTAMIENTO') || tipo.includes('CERTIFICACION')) return 'REGISTRO';
     if (tipo.includes('CAJERO')) return 'CAJAS';
     if (tipo.includes('INSPECTORIA') || tipo.includes('PARALEGAL')) return 'INSPECTORIA';

@@ -575,11 +575,46 @@ export const crearRegistrosDesdeFormulario = asyncHandler(async (req: AuthReques
   for (const producto of formulario.productos) {
     // Buscar campo "titulo" o "nombre_obra" para el título
     const campoTitulo = producto.campos.find(c =>
-      c.campo.nombre.toLowerCase().includes('titulo') ||
-      c.campo.nombre.toLowerCase().includes('nombre')
+      c.campo.campo.toLowerCase().includes('titulo') ||
+      c.campo.campo.toLowerCase().includes('nombre')
     );
 
-    const tituloObra = campoTitulo?.valor || 'Sin título';
+    // Buscar campo de subtipo - puede ser "tipo_obra" o "subcategoria" dependiendo del producto
+    const campoSubtipo = producto.campos.find(c =>
+      c.campo.campo === 'tipo_obra' || c.campo.campo === 'subcategoria'
+    );
+
+    // DEBUG: Ver todos los campos disponibles
+    console.log('🔍 DEBUG - Campos disponibles en producto:', producto.campos.map(c => ({
+      campo: c.campo.campo,
+      valor: c.valor
+    })));
+    console.log('🔍 DEBUG - Campo subtipo encontrado:', campoSubtipo ? {
+      campo: campoSubtipo.campo.campo,
+      valor: campoSubtipo.valor
+    } : 'NO ENCONTRADO');
+
+    // Normalizar a mayúsculas para consistencia en certificados y búsquedas
+    const tituloObra = (campoTitulo?.valor || 'Sin título').toUpperCase();
+    const subtipoObra = campoSubtipo?.valor ? campoSubtipo.valor.toUpperCase() : null;
+
+    console.log('🔍 DEBUG - subtipoObra final:', subtipoObra);
+
+    // Para tipoObra: usar categoría general en lugar del nombre del producto
+    const categoriaMap: Record<string, string> = {
+      'Literaria': 'OBRA LITERARIA',
+      'Musical': 'OBRA MUSICAL',
+      'Audiovisual': 'OBRA AUDIOVISUAL',
+      'Artes Visuales': 'OBRA DE ARTES VISUALES',
+      'Escénica': 'OBRA ESCÉNICA',
+      'Científica': 'OBRA CIENTÍFICA',
+      'Arte Aplicado': 'OBRA DE ARTE APLICADO',
+      'ACTOS_CONTRATOS': 'ACTO O CONTRATO',
+      'PRODUCCIONES': 'PRODUCCIÓN',
+      'Inspectoría': 'INSCRIPCIÓN IRC'
+    };
+
+    const tipoObraCategoria = categoriaMap[producto.producto.categoria] || producto.producto.categoria.toUpperCase();
     const numeroRegistro = await generarNumeroRegistro();
 
     const registro = await prisma.registro.create({
@@ -587,7 +622,8 @@ export const crearRegistrosDesdeFormulario = asyncHandler(async (req: AuthReques
         numeroRegistro,
         formularioProductoId: producto.id,
         fechaAsentamiento: new Date(),
-        tipoObra: producto.producto.nombre,
+        tipoObra: tipoObraCategoria,
+        subtipoObra,
         tituloObra,
         estadoId: estadoPendiente.id,
         usuarioAsentamientoId: req.usuario.id
@@ -981,6 +1017,7 @@ export const generarCertificado = asyncHandler(async (req: AuthRequest, res: Res
       numeroRegistro: registro.numeroRegistro,
       tituloObra: registro.tituloObra,
       tipoObra: registro.tipoObra,
+      subtipoObra: registro.subtipoObra,
       fechaAsentamiento: registro.fechaAsentamiento,
       libroNumero: registro.libroNumero,
       hojaNumero: registro.hojaNumero,

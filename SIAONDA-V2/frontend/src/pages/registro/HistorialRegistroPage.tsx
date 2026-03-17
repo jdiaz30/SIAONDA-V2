@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiArrowLeft, FiSearch, FiFilter, FiX } from 'react-icons/fi';
 import { getRegistros, Registro, FiltrosRegistro } from '../../services/registroService';
+import { getEstadoTexto, getEstadoColor } from '../../utils/estadosRegistro';
 
 const HistorialRegistroPage = () => {
   const navigate = useNavigate();
@@ -41,32 +42,6 @@ const HistorialRegistroPage = () => {
   const handleLimpiarFiltros = () => {
     setFiltros({ page: 1, limit: 50 });
     setBusqueda('');
-  };
-
-  const getEstadoColor = (estado: string): string => {
-    switch (estado) {
-      case 'PENDIENTE_ASENTAMIENTO': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'ASENTADO': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'CERTIFICADO_GENERADO': return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'ENVIADO_FIRMA': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
-      case 'CERTIFICADO_FIRMADO': return 'bg-green-100 text-green-800 border-green-200';
-      case 'LISTO_PARA_ENTREGA': return 'bg-teal-100 text-teal-800 border-teal-200';
-      case 'ENTREGADO': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getEstadoTexto = (estado: string): string => {
-    switch (estado) {
-      case 'PENDIENTE_ASENTAMIENTO': return 'Pendiente';
-      case 'ASENTADO': return 'Asentado';
-      case 'CERTIFICADO_GENERADO': return 'Cert. Generado';
-      case 'ENVIADO_FIRMA': return 'En Firma';
-      case 'CERTIFICADO_FIRMADO': return 'Firmado';
-      case 'LISTO_PARA_ENTREGA': return 'Listo Entrega';
-      case 'ENTREGADO': return 'Entregado';
-      default: return estado;
-    }
   };
 
   return (

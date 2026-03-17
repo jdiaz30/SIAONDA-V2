@@ -40,7 +40,41 @@ export const generarReporteCierreCaja = async (cierreId: number, res: Response) 
     },
     include: {
       items: true,
-      estado: true
+      estado: true,
+      cliente: {
+        select: {
+          nombrecompleto: true,
+          nombre: true,
+          apellido: true
+        }
+      },
+      formularios: {
+        include: {
+          clientes: {
+            include: {
+              cliente: {
+                select: {
+                  nombrecompleto: true
+                }
+              }
+            }
+          }
+        }
+      },
+      solicitudInspeccion: {
+        include: {
+          empresa: {
+            select: {
+              nombreComercial: true
+            }
+          }
+        }
+      },
+      denuncia: {
+        select: {
+          denuncianteNombre: true
+        }
+      }
     },
     orderBy: { codigo: 'asc' }
   });
@@ -176,9 +210,9 @@ export const generarReporteCierreCaja = async (cierreId: number, res: Response) 
 
   doc.fontSize(7).font('Helvetica-Bold');
   doc.text('Código', 50, y);
-  doc.text('Hora', 150, y);
-  doc.text('Método', 210, y);
-  doc.text('NCF', 290, y);
+  doc.text('Cliente', 135, y);
+  doc.text('Método', 280, y);
+  doc.text('NCF', 350, y);
   doc.text('Monto', 490, y, { width: 60, align: 'right' });
   y += 9;
 
@@ -187,18 +221,47 @@ export const generarReporteCierreCaja = async (cierreId: number, res: Response) 
 
   doc.font('Helvetica');
 
+  // Función auxiliar para obtener el nombre del cliente
+  const obtenerNombreCliente = (factura: any): string => {
+    // 1. Cliente directo (facturas manuales o con cliente asignado)
+    if (factura.cliente) {
+      return factura.cliente.nombrecompleto || `${factura.cliente.nombre} ${factura.cliente.apellido}`.trim();
+    }
+
+    // 2. Cliente de formulario (obras)
+    if (factura.formularios && factura.formularios.length > 0) {
+      const formulario = factura.formularios[0];
+      if (formulario.clientes && formulario.clientes.length > 0) {
+        return formulario.clientes[0].cliente.nombrecompleto;
+      }
+    }
+
+    // 3. Empresa de inspectoría
+    if (factura.solicitudInspeccion?.empresa) {
+      return factura.solicitudInspeccion.empresa.nombreComercial;
+    }
+
+    // 4. Denunciante
+    if (factura.denuncia) {
+      return factura.denuncia.denuncianteNombre;
+    }
+
+    return 'N/A';
+  };
+
   // Mostrar solo las primeras facturas si hay muchas
   const facturasAMostrar = facturas.slice(0, 15); // Máximo 15 facturas
   facturasAMostrar.forEach((factura: any) => {
-    const hora = new Date(factura.fecha).toLocaleTimeString('es-DO', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const nombreCliente = obtenerNombreCliente(factura);
+    // Truncar nombre si es muy largo
+    const nombreTruncado = nombreCliente.length > 20
+      ? nombreCliente.substring(0, 17) + '...'
+      : nombreCliente;
 
     doc.text(factura.codigo, 50, y);
-    doc.text(hora, 150, y);
-    doc.text(factura.metodoPago || 'Efectivo', 210, y);
-    doc.text(factura.ncf || '-', 290, y);
+    doc.text(nombreTruncado, 135, y);
+    doc.text(factura.metodoPago || 'Efectivo', 280, y);
+    doc.text(factura.ncf || '-', 350, y);
     doc.text(`RD$ ${Number(factura.total).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`, 490, y, { width: 60, align: 'right' });
     y += 10;
   });

@@ -219,6 +219,10 @@ export default function CobrosPendientesPage() {
   const [busqueda, setBusqueda] = useState('');
   const [vistaActual, setVistaActual] = useState<'pendientes' | 'historial'>('pendientes');
 
+  // Filtros de fecha para historial
+  const [fechaInicio, setFechaInicio] = useState('');
+  const [fechaFin, setFechaFin] = useState('');
+
   // Paginación
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -239,12 +243,12 @@ export default function CobrosPendientesPage() {
     } else {
       cargarHistorial();
     }
-  }, [vistaActual, page]);
+  }, [vistaActual, page, fechaInicio, fechaFin]);
 
   // Resetear página cuando cambien los filtros
   useEffect(() => {
     setPage(1);
-  }, [filtroTipo, busqueda]);
+  }, [filtroTipo, busqueda, fechaInicio, fechaFin]);
 
   const cargarCobros = async () => {
     try {
@@ -269,15 +273,31 @@ export default function CobrosPendientesPage() {
   const cargarHistorial = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/cajas/cobros/historial');
+
+      // Construir parámetros de consulta
+      const params = new URLSearchParams();
+      params.append('page', page.toString());
+      params.append('limit', itemsPerPage.toString());
+
+      if (fechaInicio) {
+        params.append('fechaInicio', fechaInicio);
+      }
+      if (fechaFin) {
+        params.append('fechaFin', fechaFin);
+      }
+
+      const response = await api.get(`/cajas/cobros/historial?${params.toString()}`);
       setCobros(response.data.data.historial || []);
       setStats({
         total: response.data.data.total || 0,
-        totalIrc: 0,
-        totalDenuncias: 0,
-        totalFormularios: 0,
-        montoTotal: 0
+        totalIrc: response.data.data.totalIrc || 0,
+        totalDenuncias: response.data.data.totalDenuncias || 0,
+        totalFormularios: response.data.data.totalFormularios || 0,
+        montoTotal: response.data.data.montoTotal || 0
       });
+
+      // Actualizar totalPages con la respuesta del servidor
+      setTotalPages(response.data.data.totalPages || 1);
     } catch (error) {
       console.error('Error cargando historial:', error);
       alert('Error al cargar el historial de cobros');
@@ -299,21 +319,29 @@ export default function CobrosPendientesPage() {
     }
   };
 
-  // Filtrar y paginar cobros
-  const cobrosFiltrados = cobros.filter(cobro => {
-    const pasaTipo = filtroTipo === 'TODOS' || cobro.tipo === filtroTipo;
-    const pasaBusqueda = busqueda === '' ||
-      cobro.codigo.toLowerCase().includes(busqueda.toLowerCase()) ||
-      cobro.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
-      cobro.cliente.toLowerCase().includes(busqueda.toLowerCase());
-    return pasaTipo && pasaBusqueda;
-  });
+  // Filtrar cobros (solo del lado del cliente para "pendientes")
+  const cobrosFiltrados = vistaActual === 'pendientes'
+    ? cobros.filter(cobro => {
+        const pasaTipo = filtroTipo === 'TODOS' || cobro.tipo === filtroTipo;
+        const pasaBusqueda = busqueda === '' ||
+          cobro.codigo.toLowerCase().includes(busqueda.toLowerCase()) ||
+          cobro.descripcion.toLowerCase().includes(busqueda.toLowerCase()) ||
+          cobro.cliente.toLowerCase().includes(busqueda.toLowerCase());
+        return pasaTipo && pasaBusqueda;
+      })
+    : cobros; // En historial, el filtrado lo hace el backend
 
-  // Calcular paginación del lado del cliente
-  const totalFilteredPages = Math.ceil(cobrosFiltrados.length / itemsPerPage);
+  // Calcular paginación
+  const totalFilteredPages = vistaActual === 'pendientes'
+    ? Math.ceil(cobrosFiltrados.length / itemsPerPage)
+    : totalPages; // En historial, usamos totalPages del backend
+
   const startIndex = (page - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const cobrosPaginados = cobrosFiltrados.slice(startIndex, endIndex);
+
+  const cobrosPaginados = vistaActual === 'pendientes'
+    ? cobrosFiltrados.slice(startIndex, endIndex)
+    : cobrosFiltrados; // En historial, ya viene paginado del backend
 
   const getTipoBadgeColor = (tipo: string) => {
     switch (tipo) {
@@ -399,36 +427,73 @@ export default function CobrosPendientesPage() {
 
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
-          {/* Filtro por tipo */}
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filtrar por tipo</label>
-            <select
-              value={filtroTipo}
-              onChange={(e) => setFiltroTipo(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="TODOS">Todos los servicios</option>
-              <option value="IRC">Solicitudes IRC</option>
-              <option value="DENUNCIA">Denuncias</option>
-              <option value="FORMULARIO">Formularios</option>
-            </select>
-          </div>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            {/* Filtro por tipo */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Filtrar por tipo</label>
+              <select
+                value={filtroTipo}
+                onChange={(e) => setFiltroTipo(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="TODOS">Todos los servicios</option>
+                <option value="IRC">Solicitudes IRC</option>
+                <option value="DENUNCIA">Denuncias</option>
+                <option value="FORMULARIO">Formularios</option>
+              </select>
+            </div>
 
-          {/* Búsqueda */}
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
-            <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                placeholder="Código, descripción, cliente..."
-                className="w-full pl-10 border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+            {/* Búsqueda */}
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Buscar</label>
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Código, descripción, cliente..."
+                  className="w-full pl-10 border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
             </div>
           </div>
+
+          {/* Filtros de fecha (solo para historial) */}
+          {vistaActual === 'historial' && (
+            <div className="flex flex-col md:flex-row gap-4 border-t border-gray-200 pt-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Desde</label>
+                <input
+                  type="date"
+                  value={fechaInicio}
+                  onChange={(e) => setFechaInicio(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Hasta</label>
+                <input
+                  type="date"
+                  value={fechaFin}
+                  onChange={(e) => setFechaFin(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div className="flex-1 flex items-end">
+                <button
+                  onClick={() => {
+                    setFechaInicio('');
+                    setFechaFin('');
+                  }}
+                  className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Limpiar Fechas
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

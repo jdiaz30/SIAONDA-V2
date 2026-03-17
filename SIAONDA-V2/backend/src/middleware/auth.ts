@@ -9,6 +9,7 @@ export interface AuthRequest extends Request {
     nombre: string;
     tipo: string;
     codigo: string;
+    sucursalId?: number | null;
   };
 }
 
@@ -65,7 +66,8 @@ export const authenticate = async (
       id: decoded.id,
       nombre: decoded.nombre,
       tipo: usuario.tipo.nombre,
-      codigo: decoded.codigo
+      codigo: decoded.codigo,
+      sucursalId: usuario.sucursalId
     };
 
     next();

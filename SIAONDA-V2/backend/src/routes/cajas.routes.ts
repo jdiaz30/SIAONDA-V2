@@ -11,7 +11,8 @@ import {
   getEstadosCaja,
   deleteCaja,
   getSolicitudesPendientes,
-  cobrarSolicitud
+  cobrarSolicitud,
+  crearFacturaManual
 } from '../controllers/cajas.controller';
 
 const router = Router();
@@ -29,6 +30,9 @@ router.get('/usuario/activa', getCajaActiva);
 // Solicitudes IRC - Integración con Caja
 router.get('/solicitudes-pendientes', getSolicitudesPendientes);
 router.post('/cobrar-solicitud/:id', cobrarSolicitud);
+
+// Facturas Manuales
+router.post('/factura-manual', crearFacturaManual);
 
 // CRUD principal
 router.get('/', getCajas);

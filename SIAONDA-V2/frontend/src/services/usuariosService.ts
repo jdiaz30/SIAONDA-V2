@@ -15,6 +15,13 @@ export interface Usuario {
     nombrecompleto: string;
   };
   supervisorId?: number;
+  sucursal?: {
+    id: number;
+    nombre: string;
+    codigo: string;
+  };
+  sucursalId?: number;
+  sucursalOriginalId?: number;
 }
 
 export interface UsuarioTipo {
@@ -31,6 +38,7 @@ export interface CreateUsuarioData {
   correo?: string;
   tipoId: number;
   supervisorId?: number;
+  sucursalId?: number;
 }
 
 export interface UpdateUsuarioData {
@@ -39,6 +47,15 @@ export interface UpdateUsuarioData {
   tipoId?: number;
   supervisorId?: number;
   estadoId?: number;
+  sucursalId?: number;
+}
+
+export interface Sucursal {
+  id: number;
+  codigo: string;
+  nombre: string;
+  ciudad?: string;
+  activo: boolean;
 }
 
 export interface CambiarContrasenaData {
@@ -106,6 +123,14 @@ const usuariosService = {
    */
   async cambiarContrasena(data: CambiarContrasenaData) {
     const response = await api.post('/usuarios/cambiar-contrasena', data);
+    return response.data;
+  },
+
+  /**
+   * Obtener sucursales disponibles
+   */
+  async getSucursales(): Promise<Sucursal[]> {
+    const response = await api.get('/sucursales');
     return response.data;
   },
 

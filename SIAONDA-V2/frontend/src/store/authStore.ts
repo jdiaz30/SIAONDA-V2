@@ -17,8 +17,10 @@ interface AuthState {
   usuario: Usuario | null;
   permisos: string[];
   isAuthenticated: boolean;
-  setAuth: (accessToken: string, refreshToken: string, usuario: Usuario, permisos: string[]) => void;
+  requiereCambioContrasena: boolean;
+  setAuth: (accessToken: string, refreshToken: string, usuario: Usuario, permisos: string[], requiereCambioContrasena?: boolean) => void;
   setAccessToken: (accessToken: string) => void;
+  setRequiereCambioContrasena: (requiere: boolean) => void;
   logout: () => void;
 }
 
@@ -30,18 +32,23 @@ export const useAuthStore = create<AuthState>()(
       usuario: null,
       permisos: [],
       isAuthenticated: false,
+      requiereCambioContrasena: false,
 
-      setAuth: (accessToken, refreshToken, usuario, permisos) =>
+      setAuth: (accessToken, refreshToken, usuario, permisos, requiereCambioContrasena = false) =>
         set({
           accessToken,
           refreshToken,
           usuario,
           permisos,
           isAuthenticated: true,
+          requiereCambioContrasena,
         }),
 
       setAccessToken: (accessToken) =>
         set({ accessToken }),
+
+      setRequiereCambioContrasena: (requiere) =>
+        set({ requiereCambioContrasena: requiere }),
 
       logout: () =>
         set({
@@ -50,6 +57,7 @@ export const useAuthStore = create<AuthState>()(
           usuario: null,
           permisos: [],
           isAuthenticated: false,
+          requiereCambioContrasena: false,
         }),
     }),
     {

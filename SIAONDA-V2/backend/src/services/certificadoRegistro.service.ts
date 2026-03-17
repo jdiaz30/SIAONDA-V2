@@ -8,6 +8,7 @@ interface CertificadoRegistroData {
   numeroRegistro: string;
   tituloObra: string;
   tipoObra: string;
+  subtipoObra?: string | null;
   fechaAsentamiento: Date | null;
   libroNumero?: number | null;
   hojaNumero?: number | null;
@@ -16,7 +17,7 @@ interface CertificadoRegistroData {
     identificacion: string;
   };
   campos?: Array<{
-    campo: { campo: string }; 
+    campo: { campo: string };
     valor: string;
   }>;
 }
@@ -83,12 +84,12 @@ export async function generarCertificadoRegistro(
       yPos = yPos + 50;
       doc.fillColor('#000000');
 
-      // Título de la obra
+      // Título de la obra (ya viene en mayúsculas desde la BD)
       doc.fontSize(11).font('Times-Roman').text('Título de la obra: ', 60, yPos, { continued: true });
-      doc.font('Times-Bold').text((data.tituloObra || '').toUpperCase());
+      doc.font('Times-Bold').text(data.tituloObra || '');
       yPos += 25;
 
-      // Autor(es)
+      // Autor(es) - normalizar a mayúsculas
       const autores = data.campos?.find(c => c.campo?.campo?.toLowerCase().includes('autor'))?.valor
         || data.cliente.nombrecompleto;
       doc.font('Times-Roman').text('Autor (es): ', 60, yPos, { continued: true });
@@ -100,9 +101,9 @@ export async function generarCertificadoRegistro(
       doc.font('Times-Bold').text((data.cliente.identificacion || '').toUpperCase());
       yPos += 25;
 
-      // Tipo de obra
+      // Tipo de obra - Mostrar subtipo específico si existe, sino mostrar tipo genérico
       doc.font('Times-Roman').text('Tipo de obra: ', 60, yPos, { continued: true });
-      doc.font('Times-Bold').text((data.tipoObra || '').toUpperCase());
+      doc.font('Times-Bold').text(data.subtipoObra || data.tipoObra || '');
       yPos += 25;
 
       // Titular

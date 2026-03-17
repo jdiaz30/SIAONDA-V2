@@ -139,7 +139,8 @@ export const createUsuario = asyncHandler(async (req: Request, res: Response) =>
     data: {
       ...data,
       contrasena: contrasenaHash,
-      estadoId: estadoActivo.id
+      estadoId: estadoActivo.id,
+      requiereCambioContrasena: true
     },
     include: {
       tipo: true,

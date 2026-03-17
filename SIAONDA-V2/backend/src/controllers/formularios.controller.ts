@@ -273,6 +273,7 @@ export const createFormulario = asyncHandler(async (req: AuthRequest, res: Respo
         fecha: new Date(),
         estadoId: estadoPendiente.id,
         usuarioId: req.usuario!.id,
+        sucursalId: req.usuario!.sucursalId || null,
         firma: data.firma || null,
         observaciones: data.observaciones || null
       }
@@ -782,6 +783,7 @@ export const createFormularioObra = asyncHandler(async (req: AuthRequest, res: R
         fecha: new Date(),
         estadoId: estadoPendiente.id,
         usuarioId: req.usuario!.id,
+        sucursalId: req.usuario!.sucursalId || null,
         // Guardar todos los datos de la obra en observaciones como JSON
         observaciones: JSON.stringify(datosObra.camposEspecificos)
       }
@@ -948,6 +950,7 @@ export const createFormularioObrasMultiple = asyncHandler(async (req: AuthReques
         fecha: new Date(),
         estadoId: estadoPendiente.id,
         usuarioId: req.usuario!.id,
+        sucursalId: req.usuario!.sucursalId || null,
         montoTotal
       }
     });

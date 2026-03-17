@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FiArrowLeft, FiBook, FiCalendar, FiUser, FiFileText, FiCheckCircle, FiDownload, FiUpload, FiSend } from 'react-icons/fi';
 import { getRegistroDetalle, Registro } from '../../services/registroService';
+import { getEstadoTexto, getEstadoColor } from '../../utils/estadosRegistro';
 
 const RegistroDetallePage = () => {
   const { id } = useParams<{ id: string }>();
@@ -24,32 +25,6 @@ const RegistroDetallePage = () => {
       console.error('Error al cargar registro:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getEstadoColor = (estado: string): string => {
-    switch (estado) {
-      case 'PENDIENTE_ASENTAMIENTO': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'ASENTADO': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'CERTIFICADO_GENERADO': return 'bg-purple-100 text-purple-800 border-purple-200';
-      case 'ENVIADO_FIRMA': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
-      case 'CERTIFICADO_FIRMADO': return 'bg-green-100 text-green-800 border-green-200';
-      case 'LISTO_PARA_ENTREGA': return 'bg-teal-100 text-teal-800 border-teal-200';
-      case 'ENTREGADO': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const getEstadoTexto = (estado: string): string => {
-    switch (estado) {
-      case 'PENDIENTE_ASENTAMIENTO': return 'Pendiente de Asentamiento';
-      case 'ASENTADO': return 'Asentado';
-      case 'CERTIFICADO_GENERADO': return 'Certificado Generado';
-      case 'ENVIADO_FIRMA': return 'Enviado a Firma';
-      case 'CERTIFICADO_FIRMADO': return 'Certificado Firmado';
-      case 'LISTO_PARA_ENTREGA': return 'Listo para Entrega';
-      case 'ENTREGADO': return 'Entregado';
-      default: return estado;
     }
   };
 
@@ -192,13 +167,37 @@ const RegistroDetallePage = () => {
                 <h2 className="text-xl font-bold text-gray-900">Datos Adicionales</h2>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                {registro.formularioProducto.campos.map((campo) => (
-                  <div key={campo.campo.id}>
-                    <label className="text-sm font-medium text-gray-500">{campo.campo.nombre}</label>
-                    <p className="text-gray-900">{campo.valor || 'N/A'}</p>
-                  </div>
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {registro.formularioProducto.campos.map((campo) => {
+                  // Determinar si el valor es largo o es un array para ocupar 2 columnas
+                  const valor = campo.valor || 'N/A';
+                  const esValorLargo = typeof valor === 'string' && valor.length > 100;
+                  const esArray = typeof valor === 'string' && valor.includes('\n');
+
+                  return (
+                    <div
+                      key={campo.campo.id}
+                      className={`${esValorLargo || esArray ? 'md:col-span-2' : ''}`}
+                    >
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        {campo.campo.titulo || campo.campo.nombre}
+                      </label>
+                      {esArray ? (
+                        <div className="space-y-1">
+                          {valor.split('\n').map((linea: string, idx: number) => (
+                            <p key={idx} className="text-gray-900">
+                              {linea || '—'}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-900">
+                          {valor}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

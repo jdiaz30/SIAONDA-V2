@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import LoginPage from './pages/LoginPage';
+import CambiarContrasenaPage from './pages/CambiarContrasenaPage';
 import DashboardPage from './pages/DashboardPage';
 import DashboardRegistroPage from './pages/DashboardRegistroPage';
 import UsuariosPage from './pages/UsuariosPage';
@@ -63,12 +64,25 @@ import ReportesPage from './pages/ReportesPage';
 import MainLayout from './layouts/MainLayout';
 
 function App() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, requiereCambioContrasena } = useAuthStore();
+
+  // Si está autenticado pero requiere cambio de contraseña, solo permitir esa ruta
+  if (isAuthenticated && requiereCambioContrasena) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/cambiar-contrasena" element={<CambiarContrasenaPage />} />
+          <Route path="*" element={<Navigate to="/cambiar-contrasena" replace />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
 
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/cambiar-contrasena" element={isAuthenticated ? <CambiarContrasenaPage /> : <Navigate to="/login" />} />
 
         {isAuthenticated ? (
           <Route element={<MainLayout />}>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiX } from 'react-icons/fi';
-import { Usuario, UsuarioTipo, CreateUsuarioData, UpdateUsuarioData } from '../../services/usuariosService';
+import { Usuario, UsuarioTipo, CreateUsuarioData, UpdateUsuarioData, Sucursal } from '../../services/usuariosService';
+import usuariosService from '../../services/usuariosService';
 
 interface UsuarioFormModalProps {
   isOpen: boolean;
@@ -28,11 +29,29 @@ export default function UsuarioFormModal({
     correo: '',
     contrasena: 'ONDA2026',
     tipoId: '',
-    supervisorId: ''
+    supervisorId: '',
+    sucursalId: ''
   });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
+
+  // Cargar sucursales al abrir el modal
+  useEffect(() => {
+    if (isOpen) {
+      cargarSucursales();
+    }
+  }, [isOpen]);
+
+  const cargarSucursales = async () => {
+    try {
+      const data = await usuariosService.getSucursales();
+      setSucursales(data);
+    } catch (error) {
+      console.error('Error cargando sucursales:', error);
+    }
+  };
 
   useEffect(() => {
     if (usuario && isEdit) {
@@ -43,7 +62,8 @@ export default function UsuarioFormModal({
         correo: usuario.correo || '',
         contrasena: 'ONDA2026',
         tipoId: usuario.tipoId?.toString() || '',
-        supervisorId: usuario.supervisorId?.toString() || ''
+        supervisorId: usuario.supervisorId?.toString() || '',
+        sucursalId: usuario.sucursalId?.toString() || ''
       });
     } else {
       setFormData({
@@ -53,7 +73,8 @@ export default function UsuarioFormModal({
         correo: '',
         contrasena: 'ONDA2026',
         tipoId: '',
-        supervisorId: ''
+        supervisorId: '',
+        sucursalId: ''
       });
     }
     setError('');
@@ -71,7 +92,8 @@ export default function UsuarioFormModal({
           nombrecompleto: formData.nombrecompleto,
           correo: formData.correo || undefined,
           tipoId: parseInt(formData.tipoId),
-          supervisorId: formData.supervisorId ? parseInt(formData.supervisorId) : undefined
+          supervisorId: formData.supervisorId ? parseInt(formData.supervisorId) : undefined,
+          sucursalId: formData.sucursalId ? parseInt(formData.sucursalId) : undefined
         };
         await onSubmit(updateData);
       } else {
@@ -83,7 +105,8 @@ export default function UsuarioFormModal({
           correo: formData.correo || undefined,
           contrasena: formData.contrasena,
           tipoId: parseInt(formData.tipoId),
-          supervisorId: formData.supervisorId ? parseInt(formData.supervisorId) : undefined
+          supervisorId: formData.supervisorId ? parseInt(formData.supervisorId) : undefined,
+          sucursalId: formData.sucursalId ? parseInt(formData.sucursalId) : undefined
         };
         await onSubmit(createData);
       }
@@ -233,6 +256,28 @@ export default function UsuarioFormModal({
                     ))}
                 </select>
               </div>
+            </div>
+
+            {/* Sucursal */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sucursal (Opcional)
+              </label>
+              <select
+                value={formData.sucursalId}
+                onChange={(e) => setFormData({ ...formData, sucursalId: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Sin sucursal asignada</option>
+                {sucursales.map((sucursal) => (
+                  <option key={sucursal.id} value={sucursal.id}>
+                    {sucursal.nombre} ({sucursal.codigo})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                Los formularios y pagos del usuario se asociarán automáticamente a esta sucursal
+              </p>
             </div>
 
             {/* Info de contraseña (solo crear) */}

@@ -95,6 +95,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   // Obtener permisos del usuario
   const permisos = await obtenerPermisosUsuario(usuario.tipoId);
 
+  console.log('🔐 LOGIN DEBUG - Usuario:', usuario.nombre);
+  console.log('🔐 LOGIN DEBUG - requiereCambioContrasena en DB:', usuario.requiereCambioContrasena);
+
   res.json({
     accessToken,
     refreshToken,
@@ -194,5 +197,56 @@ export const getCurrentUser = asyncHandler(async (req: AuthRequest, res: Respons
     codigo: usuario.codigo,
     tipo: usuario.tipo.nombre,
     correo: usuario.correo
+  });
+});
+
+const cambiarContrasenaSchema = z.object({
+  contrasenaActual: z.string().min(1, 'La contraseña actual es requerida').optional(),
+  contrasenaNueva: z.string().min(6, 'La nueva contraseña debe tener al menos 6 caracteres'),
+  confirmarContrasena: z.string().min(1, 'Debe confirmar la nueva contraseña')
+}).refine((data) => data.contrasenaNueva === data.confirmarContrasena, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirmarContrasena']
+});
+
+export const cambiarContrasena = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  const { contrasenaActual, contrasenaNueva, confirmarContrasena } = cambiarContrasenaSchema.parse(req.body);
+
+  const usuario = await prisma.usuario.findUnique({
+    where: { id: req.usuario.id }
+  });
+
+  if (!usuario) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
+
+  // Si no es primer cambio obligatorio, verificar contraseña actual
+  if (!usuario.requiereCambioContrasena && contrasenaActual) {
+    const isValidPassword = await comparePassword(contrasenaActual, usuario.contrasena);
+    if (!isValidPassword) {
+      throw new AppError('La contraseña actual es incorrecta', 400);
+    }
+  }
+
+  // Hash de la nueva contraseña
+  const bcrypt = require('bcryptjs');
+  const hashedPassword = await bcrypt.hash(contrasenaNueva, 10);
+
+  // Actualizar contraseña y marcar que ya no requiere cambio
+  await prisma.usuario.update({
+    where: { id: usuario.id },
+    data: {
+      contrasena: hashedPassword,
+      requiereCambioContrasena: false
+    }
+  });
+
+  res.json({
+    success: true,
+    message: 'Contraseña actualizada exitosamente'
   });
 });

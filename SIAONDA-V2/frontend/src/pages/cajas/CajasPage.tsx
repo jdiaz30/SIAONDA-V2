@@ -24,10 +24,30 @@ const CajasPage = () => {
   const [observaciones, setObservaciones] = useState('');
   const [esGratuita, setEsGratuita] = useState(false);
   const [motivoGratuito, setMotivoGratuito] = useState('');
+
+  // Modal Factura Manual
+  const [mostrarModalFacturaManual, setMostrarModalFacturaManual] = useState(false);
+  const [clienteNombre, setClienteNombre] = useState('');
+  const [clienteIdentificacion, setClienteIdentificacion] = useState('');
+  const [clienteRnc, setClienteRnc] = useState('');
+  const [items, setItems] = useState([{ concepto: '', cantidad: 1, precioUnitario: 0 }]);
+  const [metodoPago, setMetodoPago] = useState('Efectivo');
+  const [referenciaPago, setReferenciaPago] = useState('');
+  const [requiereNCF, setRequiereNCF] = useState(false);
+  const [observacionesFactura, setObservacionesFactura] = useState('');
+  const [procesando, setProcesando] = useState(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
     cargarCajaActiva();
+
+    // Actualizar contadores cada 10 segundos si hay caja activa
+    const interval = setInterval(() => {
+      cargarCajaActiva();
+    }, 10000); // 10 segundos
+
+    return () => clearInterval(interval);
   }, []);
 
   const cargarCajaActiva = async () => {
@@ -95,6 +115,85 @@ const CajasPage = () => {
       cargarCajaActiva();
     } catch (error: any) {
       alert('❌ Error al cerrar la caja: ' + getErrorMessage(error));
+    }
+  };
+
+  const agregarItem = () => {
+    setItems([...items, { concepto: '', cantidad: 1, precioUnitario: 0 }]);
+  };
+
+  const eliminarItem = (index: number) => {
+    if (items.length > 1) {
+      setItems(items.filter((_, i) => i !== index));
+    }
+  };
+
+  const actualizarItem = (index: number, campo: string, valor: any) => {
+    const nuevosItems = [...items];
+    nuevosItems[index] = { ...nuevosItems[index], [campo]: valor };
+    setItems(nuevosItems);
+  };
+
+  const calcularTotal = () => {
+    return items.reduce((sum, item) => sum + (item.cantidad * item.precioUnitario), 0);
+  };
+
+  const handleCrearFacturaManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!clienteNombre.trim()) {
+      alert('El nombre del cliente es requerido');
+      return;
+    }
+
+    if (items.some(item => !item.concepto.trim())) {
+      alert('Todos los items deben tener un concepto');
+      return;
+    }
+
+    if (requiereNCF && !clienteRnc.trim()) {
+      alert('Si requiere NCF, debe proporcionar el RNC del cliente');
+      return;
+    }
+
+    try {
+      setProcesando(true);
+      const response = await cajasService.crearFacturaManual({
+        cliente: {
+          nombre: clienteNombre,
+          identificacion: clienteIdentificacion || undefined,
+          rnc: clienteRnc || undefined
+        },
+        items,
+        metodoPago,
+        referenciaPago: referenciaPago || undefined,
+        requiereNCF,
+        observaciones: observacionesFactura || undefined
+      });
+
+      alert('✅ Factura manual creada exitosamente\n\nSe abrirá la factura para imprimir.');
+
+      // Abrir factura en nueva pestaña
+      const facturaId = response.factura.id;
+      window.open(`http://localhost:3000/api/facturas/${facturaId}/imprimir`, '_blank');
+
+      // Limpiar formulario y cerrar modal
+      setMostrarModalFacturaManual(false);
+      setClienteNombre('');
+      setClienteIdentificacion('');
+      setClienteRnc('');
+      setItems([{ concepto: '', cantidad: 1, precioUnitario: 0 }]);
+      setMetodoPago('Efectivo');
+      setReferenciaPago('');
+      setRequiereNCF(false);
+      setObservacionesFactura('');
+
+      // Recargar caja activa
+      cargarCajaActiva();
+    } catch (error: any) {
+      alert('❌ ' + getErrorMessage(error));
+    } finally {
+      setProcesando(false);
     }
   };
 
@@ -331,7 +430,7 @@ const CajasPage = () => {
             </div>
 
             {/* Acciones Principales */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <button
                 onClick={() => navigate('/cajas/cobros-pendientes')}
                 className="group bg-gradient-to-r from-green-600 to-green-700 text-white p-6 rounded-xl hover:from-green-700 hover:to-green-800 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1"
@@ -343,6 +442,21 @@ const CajasPage = () => {
                   <div className="text-left flex-1">
                     <h3 className="text-2xl font-bold mb-1">Cobros Pendientes</h3>
                     <p className="text-green-100">Procesar pagos y generar facturas</p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setMostrarModalFacturaManual(true)}
+                className="group bg-gradient-to-r from-purple-600 to-purple-700 text-white p-6 rounded-xl hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex-shrink-0 bg-white/20 p-4 rounded-lg group-hover:bg-white/30 transition-colors">
+                    <FiFileText className="text-4xl" />
+                  </div>
+                  <div className="text-left flex-1">
+                    <h3 className="text-2xl font-bold mb-1">Factura Manual</h3>
+                    <p className="text-purple-100">Cotizaciones, copias, etc.</p>
                   </div>
                 </div>
               </button>
@@ -376,6 +490,242 @@ const CajasPage = () => {
           </div>
         )}
       </div>
+
+      {/* Modal Factura Manual */}
+      {mostrarModalFacturaManual && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-purple-700 text-white px-6 py-4 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold">Nueva Factura Manual</h2>
+                <button
+                  onClick={() => setMostrarModalFacturaManual(false)}
+                  className="text-white hover:text-gray-200 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+              <p className="text-purple-100 text-sm mt-1">Cotizaciones, copias de hojas y otros servicios</p>
+            </div>
+
+            <form onSubmit={handleCrearFacturaManual} className="p-6 space-y-6">
+              {/* Información del Cliente */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <h3 className="font-bold text-gray-900 text-lg mb-3">Información del Cliente</h3>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nombre Completo *
+                  </label>
+                  <input
+                    type="text"
+                    value={clienteNombre}
+                    onChange={(e) => setClienteNombre(e.target.value)}
+                    className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500"
+                    placeholder="Nombre del cliente"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Cédula/Pasaporte
+                    </label>
+                    <input
+                      type="text"
+                      value={clienteIdentificacion}
+                      onChange={(e) => setClienteIdentificacion(e.target.value)}
+                      className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="000-0000000-0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      RNC {requiereNCF && <span className="text-red-600">*</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={clienteRnc}
+                      onChange={(e) => setClienteRnc(e.target.value)}
+                      className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="000-00000-0"
+                      required={requiereNCF}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Items de la Factura */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-900 text-lg">Servicios / Productos</h3>
+                  <button
+                    type="button"
+                    onClick={agregarItem}
+                    className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm font-medium"
+                  >
+                    + Agregar Item
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {items.map((item, index) => (
+                    <div key={index} className="bg-white rounded-lg p-4 border-2 border-gray-200">
+                      <div className="grid grid-cols-12 gap-3">
+                        <div className="col-span-6">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Concepto *
+                          </label>
+                          <input
+                            type="text"
+                            value={item.concepto}
+                            onChange={(e) => actualizarItem(index, 'concepto', e.target.value)}
+                            className="w-full border border-gray-300 rounded px-2 py-2 text-sm focus:ring-purple-500 focus:border-purple-500"
+                            placeholder="Ej: Cotización, Copia de hoja, etc."
+                            required
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Cantidad
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.cantidad}
+                            onChange={(e) => actualizarItem(index, 'cantidad', parseInt(e.target.value))}
+                            className="w-full border border-gray-300 rounded px-2 py-2 text-sm focus:ring-purple-500 focus:border-purple-500"
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Precio Unit.
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.precioUnitario}
+                            onChange={(e) => actualizarItem(index, 'precioUnitario', parseFloat(e.target.value))}
+                            className="w-full border border-gray-300 rounded px-2 py-2 text-sm focus:ring-purple-500 focus:border-purple-500"
+                          />
+                        </div>
+                        <div className="col-span-1 flex items-end">
+                          {items.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => eliminarItem(index)}
+                              className="w-full bg-red-500 text-white px-2 py-2 rounded hover:bg-red-600 text-sm"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-2 text-right text-sm font-medium text-gray-700">
+                        Subtotal: RD$ {(item.cantidad * item.precioUnitario).toFixed(2)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 bg-purple-50 rounded-lg p-4 border-2 border-purple-200">
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-bold text-gray-900">Total:</span>
+                    <span className="text-2xl font-bold text-purple-700">
+                      RD$ {calcularTotal().toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Método de Pago */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <h3 className="font-bold text-gray-900 text-lg">Información de Pago</h3>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Método de Pago *
+                    </label>
+                    <select
+                      value={metodoPago}
+                      onChange={(e) => setMetodoPago(e.target.value)}
+                      className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500"
+                      required
+                    >
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                      <option value="Transferencia">Transferencia</option>
+                      <option value="Cheque">Cheque</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Referencia de Pago
+                    </label>
+                    <input
+                      type="text"
+                      value={referenciaPago}
+                      onChange={(e) => setReferenciaPago(e.target.value)}
+                      className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="Número de transacción"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={requiereNCF}
+                      onChange={(e) => setRequiereNCF(e.target.checked)}
+                      className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      ¿Requiere Comprobante Fiscal (NCF)?
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Observaciones */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Observaciones
+                </label>
+                <textarea
+                  value={observacionesFactura}
+                  onChange={(e) => setObservacionesFactura(e.target.value)}
+                  rows={3}
+                  className="w-full border-2 border-gray-300 rounded-lg px-3 py-2 focus:ring-purple-500 focus:border-purple-500"
+                  placeholder="Notas adicionales sobre esta factura..."
+                />
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-3 justify-end pt-4 border-t-2 border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalFacturaManual(false)}
+                  className="px-6 py-3 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-semibold"
+                  disabled={procesando}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={procesando}
+                  className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 disabled:bg-gray-400 font-semibold shadow-lg"
+                >
+                  {procesando ? 'Procesando...' : 'Generar Factura'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

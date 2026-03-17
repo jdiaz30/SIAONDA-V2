@@ -21,6 +21,12 @@ export interface LoginResponse {
   requiereCambioContrasena: boolean;
 }
 
+export interface CambiarContrasenaRequest {
+  contrasenaActual?: string;
+  contrasenaNueva: string;
+  confirmarContrasena: string;
+}
+
 export const authService = {
   login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
     const response = await api.post<LoginResponse>('/auth/login', credentials);
@@ -33,6 +39,11 @@ export const authService = {
 
   getCurrentUser: async () => {
     const response = await api.get('/auth/me');
+    return response.data;
+  },
+
+  cambiarContrasena: async (data: CambiarContrasenaRequest): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post('/auth/cambiar-contrasena', data);
     return response.data;
   },
 };

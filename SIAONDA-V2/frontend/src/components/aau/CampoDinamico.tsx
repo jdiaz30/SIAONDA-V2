@@ -37,6 +37,14 @@ const CampoDinamico = ({ campo, valor, onChange, visible = true }: Props) => {
     } else if (type === 'number') {
       onChange(campo.campo, value ? parseFloat(value) : '');
     } else {
+      // DEBUG: Log cuando se cambia tipo_obra
+      if (campo.campo === 'tipo_obra') {
+        console.log('🔍 CampoDinamico: Cambio en tipo_obra', {
+          campo: campo.campo,
+          valor: value,
+          campoId: campo.id
+        });
+      }
       onChange(campo.campo, value);
     }
   };

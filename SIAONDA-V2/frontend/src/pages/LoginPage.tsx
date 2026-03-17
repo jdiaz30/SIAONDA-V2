@@ -20,14 +20,25 @@ const LoginPage = () => {
 
     try {
       const response = await authService.login({ nombre, contrasena });
-      setAuth(response.accessToken, response.refreshToken, response.usuario, response.permisos || []);
+      console.log('🔐 LOGIN RESPONSE:', response);
+      console.log('🔐 requiereCambioContrasena:', response.requiereCambioContrasena);
+
+      // Establecer autenticación con el flag de cambio de contraseña
+      setAuth(
+        response.accessToken,
+        response.refreshToken,
+        response.usuario,
+        response.permisos || [],
+        response.requiereCambioContrasena
+      );
 
       // Verificar si requiere cambio de contraseña
       if (response.requiereCambioContrasena) {
-        // TODO: Redirigir a página de cambio de contraseña obligatorio
-        navigate('/cambiar-contrasena');
+        console.log('🔐 Redirigiendo a /cambiar-contrasena');
+        navigate('/cambiar-contrasena', { replace: true });
       } else {
-        navigate('/dashboard');
+        console.log('🔐 Redirigiendo a /dashboard');
+        navigate('/dashboard', { replace: true });
       }
     } catch (err: any) {
       setError(getErrorMessage(err));
