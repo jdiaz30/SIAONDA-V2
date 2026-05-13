@@ -19,23 +19,14 @@ export const authenticate = async (
   next: NextFunction
 ) => {
   try {
-    // Intentar obtener token del header o del query parameter
+    // Obtener token del header Authorization únicamente (más seguro)
     const authHeader = req.headers.authorization;
-    const queryToken = req.query.token as string;
 
-    let token: string | undefined;
-
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
-    } else if (queryToken) {
-      token = queryToken;
-    } else {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new AppError('Token no proporcionado', 401);
     }
 
-    if (!token) {
-      throw new AppError('Token no proporcionado', 401);
-    }
+    const token = authHeader.substring(7);
     const secret = process.env.JWT_SECRET;
 
     if (!secret) {

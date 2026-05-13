@@ -8,12 +8,12 @@ const HistorialRegistroPage = () => {
   const navigate = useNavigate();
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtros, setFiltros] = useState<FiltrosRegistro>({ page: 1, limit: 50 });
+  const [filtros, setFiltros] = useState<FiltrosRegistro>({ page: 1, limit: 15 });
   const [busqueda, setBusqueda] = useState('');
   const [mostrarFiltros, setMostrarFiltros] = useState(false);
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 50,
+    limit: 15,
     total: 0,
     totalPages: 0
   });
@@ -40,7 +40,7 @@ const HistorialRegistroPage = () => {
   };
 
   const handleLimpiarFiltros = () => {
-    setFiltros({ page: 1, limit: 50 });
+    setFiltros({ page: 1, limit: 15 });
     setBusqueda('');
   };
 
@@ -199,11 +199,19 @@ const HistorialRegistroPage = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                          {registro.tituloObra}
+                          {(registro as any).esProduccion
+                            ? (registro as any).tituloProduccion || registro.tituloObra
+                            : registro.tituloObra}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-600">{registro.tipoObra}</span>
+                        <span className="text-sm text-gray-600">
+                          {(registro as any).esProduccion === true
+                            ? `PRODUCCIÓN (${(registro as any).cantidadObras} obras)`
+                            : registro.tipoObra === 'PRODUCCIÓN'
+                              ? 'OBRA MUSICAL'
+                              : registro.tipoObra}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">
@@ -224,7 +232,15 @@ const HistorialRegistroPage = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <button
-                          onClick={() => navigate(`/registro/${registro.id}`)}
+                          onClick={() => {
+                            // Si es producción, agregar parámetro para mostrar todas las obras
+                            const esProduccion = (registro as any).esProduccion === true;
+                            if (esProduccion) {
+                              navigate(`/registro/${registro.id}?produccion=true`);
+                            } else {
+                              navigate(`/registro/${registro.id}`);
+                            }
+                          }}
                           className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                         >
                           Ver

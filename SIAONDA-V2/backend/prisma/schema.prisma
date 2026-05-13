@@ -3,7 +3,7 @@
 
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -357,6 +357,7 @@ model FormularioCliente {
   formularioId  Int       @map("formulario_id")
   clienteId     Int       @map("cliente_id")
   tipoRelacion  String    @db.VarChar(50) // Autor, Compositor, Intérprete, etc.
+  esPrincipal   Boolean   @default(false) @map("es_principal") // Para encabezado del certificado
 
   formulario    Formulario @relation(fields: [formularioId], references: [id], onDelete: Cascade)
   cliente       Cliente    @relation(fields: [clienteId], references: [id])
@@ -944,12 +945,13 @@ model DocumentoEmpresa {
 // -------- CATEGORÍAS IRC --------
 
 model CategoriaIrc {
-  id          Int      @id @default(autoincrement())
-  codigo      String   @unique @db.VarChar(10) // 'IRC-01' a 'IRC-15'
-  nombre      String   @db.VarChar(255)
-  descripcion String   @db.Text
-  precio      Decimal  @db.Decimal(10, 2) // Precio según resolución 013-2023
-  activo      Boolean  @default(true)
+  id            Int      @id @default(autoincrement())
+  codigo        String   @unique @db.VarChar(10) // 'IRC-01' a 'IRC-15'
+  nombre        String   @db.VarChar(255)
+  descripcion   String   @db.Text
+  precio        Decimal  @db.Decimal(10, 2) // Precio base o único según resolución 013-2023
+  subcategorias Json?    // JSON con subcategorías para IRC-04, IRC-05, IRC-09
+  activo        Boolean  @default(true)
 
   empresas    EmpresaInspeccionada[]
   solicitudes SolicitudRegistroInspeccion[]

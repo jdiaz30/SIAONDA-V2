@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const prisma = new PrismaClient();
 
@@ -315,11 +317,22 @@ async function main() {
   console.log('👤 Creando tipos de cliente...');
   const tiposCliente = [
     { nombre: 'Autor', descripcion: 'Autor de obra' },
+    { nombre: 'Arreglista', descripcion: 'Arreglista musical' },
+    { nombre: 'Autor Original', descripcion: 'Autor original de la obra' },
+    { nombre: 'Autor Principal', descripcion: 'Autor principal de la obra' },
+    { nombre: 'Coautor', descripcion: 'Coautor de obra' },
     { nombre: 'Compositor', descripcion: 'Compositor musical' },
-    { nombre: 'Intérprete', descripcion: 'Intérprete o ejecutante' },
+    { nombre: 'Director', descripcion: 'Director de la obra' },
+    { nombre: 'Divulgador', descripcion: 'Divulgador de la obra' },
     { nombre: 'Editor', descripcion: 'Editor de obras' },
+    { nombre: 'Guionista', descripcion: 'Guionista' },
+    { nombre: 'Impresor', descripcion: 'Impresor de la obra' },
+    { nombre: 'Intérprete', descripcion: 'Intérprete o ejecutante' },
     { nombre: 'Productor', descripcion: 'Productor' },
-    { nombre: 'Solicitante', descripcion: 'Solicitante general' }
+    { nombre: 'Representante', descripcion: 'Representante legal' },
+    { nombre: 'Solicitante', descripcion: 'Solicitante general' },
+    { nombre: 'Titular', descripcion: 'Titular de derechos' },
+    { nombre: 'Visitante', descripcion: 'Visitante' }
   ];
 
   for (const tipo of tiposCliente) {
@@ -461,215 +474,49 @@ async function main() {
   // 15. Obtener productos creados
   const productosCreados = await prisma.producto.findMany();
 
-  // 16. Campos Dinámicos para Productos - REPLICANDO EXACTAMENTE SIAONDA V1
-  console.log('✏️  Creando campos dinámicos basados en SIAONDA V1...');
+  // 16. Campos Dinámicos para Productos - CARGANDO DESDE EXPORTACIÓN DE BD LOCAL CORRECTA
+  console.log('✏️  Creando campos dinámicos desde exportación de BD local (981 campos)...');
 
   // Verificar si ya existen campos
   const camposExistentes = await prisma.formularioCampo.count();
 
-  if (camposExistentes === 0 && tipoTexto && tipoNumerico && tipoFecha && tipoCheckbox && tipoArchivo) {
-    const todosCampos: any[] = [];
+  if (camposExistentes === 0) {
+    // Cargar campos desde JSON exportado de la BD local correcta
+    const camposJsonPath = path.join(__dirname, 'seed-campos-correctos.json');
+    const camposExportados = JSON.parse(fs.readFileSync(camposJsonPath, 'utf8'));
 
-    // ============================================================================
-    // CAMPOS GLOBALES - De obra_generales.php de SIAONDA V1
-    // Aplican a TODOS los productos
-    // ============================================================================
-    todosCampos.push(
-      { productoId: null, campo: 'editor_divulgador', titulo: 'Nombre editor o divulgador (si es obra anónima)', tipoId: tipoTexto.id, requerido: false, orden: 1, activo: true },
-      { productoId: null, campo: 'titulo_obra', titulo: 'Título de la obra', tipoId: tipoTexto.id, requerido: true, orden: 2, activo: true },
-      { productoId: null, campo: 'obra_inedita', titulo: 'Obra Inédita', tipoId: tipoCheckbox.id, requerido: false, orden: 3, activo: true },
-      { productoId: null, campo: 'obra_publica', titulo: 'Obra Pública', tipoId: tipoCheckbox.id, requerido: false, orden: 4, activo: true },
-      { productoId: null, campo: 'fecha_1ra_publicacion', titulo: 'Fecha 1ra publicación', tipoId: tipoFecha.id, requerido: false, orden: 5, activo: true },
-      { productoId: null, campo: 'obra_originaria', titulo: 'Obra Originaria', tipoId: tipoCheckbox.id, requerido: false, orden: 6, activo: true },
-      { productoId: null, campo: 'obra_derivada', titulo: 'Obra derivada', tipoId: tipoCheckbox.id, requerido: false, orden: 7, activo: true },
-      { productoId: null, campo: 'obra_individual', titulo: 'Obra individual', tipoId: tipoCheckbox.id, requerido: false, orden: 8, activo: true },
-      { productoId: null, campo: 'obra_colectiva', titulo: 'Obra colectiva', tipoId: tipoCheckbox.id, requerido: false, orden: 9, activo: true },
-      { productoId: null, campo: 'obra_colaboracion', titulo: 'Obra colaboración', tipoId: tipoCheckbox.id, requerido: false, orden: 10, activo: true },
-      { productoId: null, campo: 'otro_dato', titulo: 'Cualquier otro dato para su identificación', tipoId: tipoTexto.id, requerido: false, orden: 11, activo: true },
-      { productoId: null, campo: 'pais_origen', titulo: 'País de origen obra', tipoId: tipoTexto.id, requerido: false, orden: 12, activo: true },
-      { productoId: null, campo: 'ano_realizacion', titulo: 'Año de su realización', tipoId: tipoNumerico.id, requerido: false, orden: 13, activo: true },
-      { productoId: null, campo: 'ano_1ra_publicacion', titulo: '1ra publicación: (si es el caso)', tipoId: tipoNumerico.id, requerido: false, orden: 14, activo: true },
-      { productoId: null, campo: 'titulo_original', titulo: 'Título de la obra en su idioma original: (En caso de que sea una traducción al castellano)', tipoId: tipoTexto.id, requerido: false, orden: 15, activo: true },
-      { productoId: null, campo: 'descripcion', titulo: 'Breve Descripción de la obra: (naturaleza y características)', tipoId: tipoTexto.id, requerido: false, orden: 16, activo: true }
-    );
+    // Crear mapas de productos y tipos para mapear IDs
+    const productoMap = new Map(productosCreados.map(p => [p.codigo, p.id]));
+    const tiposCampo = await prisma.formularioCampoTipo.findMany({ select: { id: true, nombre: true } });
+    const tipoMap = new Map(tiposCampo.map(t => [t.nombre, t.id]));
 
-    // ============================================================================
-    // CAMPOS ESPECÍFICOS POR TIPO DE PRODUCTO (SIAONDA V1)
-    // ============================================================================
+    // Mapear campos exportados a formato de seed
+    const camposData = camposExportados.map((campo: any) => ({
+      productoId: campo.producto ? productoMap.get(campo.producto.codigo) : null,
+      tipoId: tipoMap.get(campo.tipo.nombre),
+      campo: campo.campo,
+      titulo: campo.titulo,
+      descripcion: campo.descripcion || undefined,
+      placeholder: campo.placeholder || undefined,
+      opciones: campo.opciones || undefined,
+      requerido: campo.requerido,
+      orden: campo.orden,
+      activo: campo.activo,
+      grupo: campo.grupo || undefined
+    }));
 
-    // ============================================================================
-    // OBRAS PLÁSTICAS/ARTES VISUALES - De obra_plastica.php de SIAONDA V1
-    // AP-01: Dibujo, AP-02: Fotografía, AP-03: Pintura, AP-04: Escultura, AP-05: Grabado
-    // ============================================================================
-    const productosPlasticos = ['AP-01', 'AP-02', 'AP-03', 'AP-04', 'AP-05'];
-    for (const codigo of productosPlasticos) {
-      const producto = productosCreados.find(p => p.codigo === codigo);
-      if (producto) {
-        todosCampos.push(
-          { productoId: producto.id, campo: 'descripcion_obra', titulo: 'Descripción de la obra', tipoId: tipoTexto.id, requerido: true, orden: 20, activo: true },
-          { productoId: producto.id, campo: 'ubicacion_obra', titulo: 'Ubicación de la obra', tipoId: tipoTexto.id, requerido: false, orden: 21, activo: true },
-          { productoId: producto.id, campo: 'datos_publicacion_exhibicion', titulo: 'Datos de su publicación, exhibición o ubicación', tipoId: tipoTexto.id, requerido: false, orden: 22, activo: true }
-        );
-      }
-    }
+    console.log(`   📦 Cargados ${camposData.length} campos desde exportación local`);
+    console.log(`   🤖 Incluyendo ${camposData.filter((c: any) => c.campo === 'uso_ia').length} campos de IA (checkbox)`);
 
-    // ============================================================================
-    // OBRAS AUDIOVISUALES - De obra_audiovisual.php de SIAONDA V1
-    // AUD-01: Cinematográfica largo, AUD-02: Cinematográfica corto,
-    // AUD-03: Documental corto, AUD-04: Documental largo/Serie, AUD-05: Capítulo/Videoclip
-    // ============================================================================
-    const productosAudiovisuales = ['AUD-01', 'AUD-02', 'AUD-03', 'AUD-04', 'AUD-05'];
-    for (const codigo of productosAudiovisuales) {
-      const producto = productosCreados.find(p => p.codigo === codigo);
-      if (producto) {
-        todosCampos.push(
-          { productoId: producto.id, campo: 'autor_coautores', titulo: 'Nombre autor o coautores de la obra', tipoId: tipoTexto.id, requerido: true, orden: 20, activo: true },
-          { productoId: producto.id, campo: 'domicilio_autor', titulo: 'Domicilio del autor o coautores', tipoId: tipoTexto.id, requerido: false, orden: 21, activo: true },
-          { productoId: producto.id, campo: 'nombre_domicilio_productor', titulo: 'Nombre y Domicilio del Productor', tipoId: tipoTexto.id, requerido: false, orden: 22, activo: true },
-          { productoId: producto.id, campo: 'interpretes_principales', titulo: 'Nombre de los intérpretes principales', tipoId: tipoTexto.id, requerido: false, orden: 23, activo: true },
-          { productoId: producto.id, campo: 'otros_elementos_ficha_tecnica', titulo: 'Otros elementos de la ficha técnica', tipoId: tipoTexto.id, requerido: false, orden: 24, activo: true },
-          { productoId: producto.id, campo: 'pais_origen_publicacion', titulo: 'País de origen de la primera publicación', tipoId: tipoTexto.id, requerido: false, orden: 25, activo: true },
-          { productoId: producto.id, campo: 'ano', titulo: 'Año', tipoId: tipoNumerico.id, requerido: false, orden: 26, activo: true },
-          { productoId: producto.id, campo: 'breve_descripcion_argumento', titulo: 'Breve descripción del argumento', tipoId: tipoTexto.id, requerido: false, orden: 27, activo: true }
-        );
-      }
-    }
-
-    // ============================================================================
-    // OBRAS FONOGRÁFICAS - De obra_fonografica.php de SIAONDA V1
-    // MUS-03: Fonograma
-    // ============================================================================
-    const productoMUS03 = productosCreados.find(p => p.codigo === 'MUS-03');
-    if (productoMUS03) {
-      todosCampos.push(
-        { productoId: productoMUS03.id, campo: 'titulo_produccion', titulo: 'Título de la producción en su idioma original y de su traducción al castellano', tipoId: tipoTexto.id, requerido: true, orden: 20, activo: true },
-        { productoId: productoMUS03.id, campo: 'nombre_domicilio_productor', titulo: 'Nombre y domicilio del productor', tipoId: tipoTexto.id, requerido: true, orden: 21, activo: true },
-        { productoId: productoMUS03.id, campo: 'ano_fijacion', titulo: 'Año de la fijación', tipoId: tipoNumerico.id, requerido: false, orden: 22, activo: true },
-        { productoId: productoMUS03.id, campo: 'ano_1ra_publicacion_fono', titulo: 'Año de la 1ra publicación', tipoId: tipoNumerico.id, requerido: false, orden: 23, activo: true },
-        { productoId: productoMUS03.id, campo: 'titulos_obras_contenidas', titulo: 'Títulos de las obras contenidas en la producción y nombre de sus autores', tipoId: tipoTexto.id, requerido: false, orden: 24, activo: true },
-        { productoId: productoMUS03.id, campo: 'artistas_interpretes_ejecutantes', titulo: 'Nombre de los artistas, intérpretes o ejecutantes', tipoId: tipoTexto.id, requerido: false, orden: 25, activo: true }
-      );
-    }
-
-    // ============================================================================
-    // LETRA DE CANCIÓN - De formulario_letracacion.php de SIAONDA V1
-    // MUS-01: Obras Musicales con letra o sin ella / LIT-01: Letra para obra musical
-    // ============================================================================
-    const productosLetraCancion = ['MUS-01', 'LIT-01'];
-    for (const codigo of productosLetraCancion) {
-      const producto = productosCreados.find(p => p.codigo === codigo);
-      if (producto) {
-        todosCampos.push(
-          { productoId: producto.id, campo: 'letra_titulo', titulo: 'Título', tipoId: tipoTexto.id, requerido: true, orden: 20, activo: true },
-          { productoId: producto.id, campo: 'letra_traducciontitulo', titulo: 'Traducción Título', tipoId: tipoTexto.id, requerido: false, orden: 21, activo: true },
-          { productoId: producto.id, campo: 'letra_tituloorig', titulo: 'Título Original (si la obra es derivada)', tipoId: tipoTexto.id, requerido: false, orden: 22, activo: true },
-          { productoId: producto.id, campo: 'letra_descripcion', titulo: 'Breve Descripción', tipoId: tipoTexto.id, requerido: false, orden: 23, activo: true },
-          { productoId: producto.id, campo: 'letra_genero', titulo: 'Género', tipoId: tipoTexto.id, requerido: false, orden: 24, activo: true, descripcion: 'Moderno, Contemporáneo, Prosa, 3-4, Clásico' },
-          { productoId: producto.id, campo: 'letra_porigen', titulo: 'País de Origen', tipoId: tipoTexto.id, requerido: false, orden: 25, activo: true },
-          { productoId: producto.id, campo: 'letra_anocreacion', titulo: 'Año Creación', tipoId: tipoNumerico.id, requerido: false, orden: 26, activo: true },
-          { productoId: producto.id, campo: 'letra_archletra', titulo: 'Archivo Letra de la Canción', tipoId: tipoArchivo.id, requerido: false, orden: 27, activo: true }
-        );
-      }
-    }
-
-    // ============================================================================
-    // MELODÍA / ARREGLO MUSICAL - De formulario_melodia.php de SIAONDA V1
-    // MUS-02: Arreglo Musical
-    // ============================================================================
-    const productoMUS02 = productosCreados.find(p => p.codigo === 'MUS-02');
-    if (productoMUS02) {
-      todosCampos.push(
-        { productoId: productoMUS02.id, campo: 'melodia_titulo', titulo: 'Título', tipoId: tipoTexto.id, requerido: true, orden: 20, activo: true },
-        { productoId: productoMUS02.id, campo: 'melodia_genero', titulo: 'Género', tipoId: tipoTexto.id, requerido: false, orden: 21, activo: true, descripcion: 'Moderno, Contemporáneo, Prosa, 3-4, Clásico' },
-        { productoId: productoMUS02.id, campo: 'melodia_ritmo', titulo: 'Ritmo', tipoId: tipoTexto.id, requerido: false, orden: 22, activo: true, descripcion: 'Bachata, Merengue, Rock, Electro Pop, Balada' },
-        { productoId: productoMUS02.id, campo: 'melodia_porigen', titulo: 'País de Origen', tipoId: tipoTexto.id, requerido: false, orden: 23, activo: true },
-        { productoId: productoMUS02.id, campo: 'melodia_anocreacion', titulo: 'Año Creación', tipoId: tipoNumerico.id, requerido: false, orden: 24, activo: true },
-        { productoId: productoMUS02.id, campo: 'melodia_archpartitura', titulo: 'Archivo Partitura de la Canción', tipoId: tipoArchivo.id, requerido: false, orden: 25, activo: true },
-        { productoId: productoMUS02.id, campo: 'melodia_archmelodia', titulo: 'Archivo Melodía de la Canción', tipoId: tipoArchivo.id, requerido: false, orden: 26, activo: true }
-      );
-    }
-
-    // ============================================================================
-    // SOLICITUD IRC (INSPECTORÍA) - Registro o Renovación de Empresas
-    // IRC-01: Solicitud de Registro IRC
-    // ============================================================================
-    const productoIRC01 = productosCreados.find(p => p.codigo === 'IRC-01');
-    if (productoIRC01) {
-      todosCampos.push(
-        // Datos básicos de la empresa
-        { productoId: productoIRC01.id, campo: 'tipoSolicitud', titulo: 'Tipo de Solicitud', tipoId: tipoTexto.id, requerido: true, orden: 20, activo: true, descripcion: 'REGISTRO_NUEVO o RENOVACION' },
-        { productoId: productoIRC01.id, campo: 'nombreEmpresa', titulo: 'Nombre de la Empresa', tipoId: tipoTexto.id, requerido: true, orden: 21, activo: true },
-        { productoId: productoIRC01.id, campo: 'nombreComercial', titulo: 'Nombre Comercial', tipoId: tipoTexto.id, requerido: false, orden: 22, activo: true },
-        { productoId: productoIRC01.id, campo: 'rnc', titulo: 'RNC de la Empresa', tipoId: tipoTexto.id, requerido: true, orden: 23, activo: true, descripcion: 'Formato: XXX-XXXXX-X' },
-        { productoId: productoIRC01.id, campo: 'categoriaIrc', titulo: 'Categoría IRC', tipoId: tipoTexto.id, requerido: true, orden: 24, activo: true, descripcion: 'Buscar en catálogo de categorías IRC' },
-        { productoId: productoIRC01.id, campo: 'fechaInicioOperaciones', titulo: 'Fecha Inicio Operaciones', tipoId: tipoTexto.id, requerido: false, orden: 25, activo: true },
-        { productoId: productoIRC01.id, campo: 'principalesClientes', titulo: 'Principales Clientes', tipoId: tipoTexto.id, requerido: false, orden: 26, activo: true },
-
-        // Ubicación y contacto
-        { productoId: productoIRC01.id, campo: 'direccion', titulo: 'Dirección de la Empresa', tipoId: tipoTexto.id, requerido: true, orden: 30, activo: true },
-        { productoId: productoIRC01.id, campo: 'provincia', titulo: 'Provincia', tipoId: tipoTexto.id, requerido: false, orden: 31, activo: true },
-        { productoId: productoIRC01.id, campo: 'sector', titulo: 'Sector', tipoId: tipoTexto.id, requerido: false, orden: 32, activo: true },
-        { productoId: productoIRC01.id, campo: 'telefono', titulo: 'Teléfono', tipoId: tipoTexto.id, requerido: true, orden: 33, activo: true },
-        { productoId: productoIRC01.id, campo: 'telefonoSecundario', titulo: 'Teléfono Secundario', tipoId: tipoTexto.id, requerido: false, orden: 34, activo: true },
-        { productoId: productoIRC01.id, campo: 'email', titulo: 'Correo Electrónico', tipoId: tipoTexto.id, requerido: false, orden: 35, activo: true },
-
-        // Representante Legal
-        { productoId: productoIRC01.id, campo: 'representanteLegal', titulo: 'Representante Legal', tipoId: tipoTexto.id, requerido: true, orden: 40, activo: true },
-        { productoId: productoIRC01.id, campo: 'cedulaRepresentante', titulo: 'Cédula del Representante', tipoId: tipoTexto.id, requerido: true, orden: 41, activo: true, descripcion: 'Formato: XXX-XXXXXXX-X' },
-
-        // Tipo de persona
-        { productoId: productoIRC01.id, campo: 'tipoPersona', titulo: 'Tipo de Persona', tipoId: tipoTexto.id, requerido: true, orden: 45, activo: true, descripcion: 'MORAL o FISICA' },
-        { productoId: productoIRC01.id, campo: 'descripcionActividades', titulo: 'Descripción de Actividades', tipoId: tipoTexto.id, requerido: false, orden: 46, activo: true },
-
-        // Persona FISICA - Propietario
-        { productoId: productoIRC01.id, campo: 'nombrePropietario', titulo: 'Nombre del Propietario', tipoId: tipoTexto.id, requerido: false, orden: 50, activo: true },
-        { productoId: productoIRC01.id, campo: 'cedulaPropietario', titulo: 'Cédula del Propietario', tipoId: tipoTexto.id, requerido: false, orden: 51, activo: true },
-        { productoId: productoIRC01.id, campo: 'domicilioPropietario', titulo: 'Domicilio del Propietario', tipoId: tipoTexto.id, requerido: false, orden: 52, activo: true },
-        { productoId: productoIRC01.id, campo: 'telefonoPropietario', titulo: 'Teléfono del Propietario', tipoId: tipoTexto.id, requerido: false, orden: 53, activo: true },
-        { productoId: productoIRC01.id, campo: 'celularPropietario', titulo: 'Celular del Propietario', tipoId: tipoTexto.id, requerido: false, orden: 54, activo: true },
-        { productoId: productoIRC01.id, campo: 'emailPropietario', titulo: 'Email del Propietario', tipoId: tipoTexto.id, requerido: false, orden: 55, activo: true },
-
-        // Persona FISICA - Administrador
-        { productoId: productoIRC01.id, campo: 'nombreAdministrador', titulo: 'Nombre del Administrador', tipoId: tipoTexto.id, requerido: false, orden: 60, activo: true },
-        { productoId: productoIRC01.id, campo: 'cedulaAdministrador', titulo: 'Cédula del Administrador', tipoId: tipoTexto.id, requerido: false, orden: 61, activo: true },
-        { productoId: productoIRC01.id, campo: 'telefonoAdministrador', titulo: 'Teléfono del Administrador', tipoId: tipoTexto.id, requerido: false, orden: 62, activo: true },
-        { productoId: productoIRC01.id, campo: 'fechaInicioActividades', titulo: 'Fecha Inicio Actividades', tipoId: tipoTexto.id, requerido: false, orden: 63, activo: true },
-
-        // Persona MORAL - Presidente
-        { productoId: productoIRC01.id, campo: 'presidenteNombre', titulo: 'Nombre del Presidente', tipoId: tipoTexto.id, requerido: false, orden: 70, activo: true },
-        { productoId: productoIRC01.id, campo: 'presidenteCedula', titulo: 'Cédula del Presidente', tipoId: tipoTexto.id, requerido: false, orden: 71, activo: true },
-        { productoId: productoIRC01.id, campo: 'presidenteDomicilio', titulo: 'Domicilio del Presidente', tipoId: tipoTexto.id, requerido: false, orden: 72, activo: true },
-        { productoId: productoIRC01.id, campo: 'presidenteTelefono', titulo: 'Teléfono del Presidente', tipoId: tipoTexto.id, requerido: false, orden: 73, activo: true },
-        { productoId: productoIRC01.id, campo: 'presidenteCelular', titulo: 'Celular del Presidente', tipoId: tipoTexto.id, requerido: false, orden: 74, activo: true },
-        { productoId: productoIRC01.id, campo: 'presidenteEmail', titulo: 'Email del Presidente', tipoId: tipoTexto.id, requerido: false, orden: 75, activo: true },
-
-        // Persona MORAL - Otros miembros del Consejo
-        { productoId: productoIRC01.id, campo: 'vicepresidente', titulo: 'Vicepresidente', tipoId: tipoTexto.id, requerido: false, orden: 80, activo: true },
-        { productoId: productoIRC01.id, campo: 'secretario', titulo: 'Secretario', tipoId: tipoTexto.id, requerido: false, orden: 81, activo: true },
-        { productoId: productoIRC01.id, campo: 'tesorero', titulo: 'Tesorero', tipoId: tipoTexto.id, requerido: false, orden: 82, activo: true },
-        { productoId: productoIRC01.id, campo: 'administrador', titulo: 'Administrador', tipoId: tipoTexto.id, requerido: false, orden: 83, activo: true },
-        { productoId: productoIRC01.id, campo: 'domicilioConsejo', titulo: 'Domicilio del Consejo', tipoId: tipoTexto.id, requerido: false, orden: 84, activo: true },
-        { productoId: productoIRC01.id, campo: 'telefonoConsejo', titulo: 'Teléfono del Consejo', tipoId: tipoTexto.id, requerido: false, orden: 85, activo: true },
-        { productoId: productoIRC01.id, campo: 'fechaConstitucion', titulo: 'Fecha Constitución', tipoId: tipoTexto.id, requerido: false, orden: 86, activo: true },
-
-        // Documentos
-        { productoId: productoIRC01.id, campo: 'documentosAdjuntos', titulo: 'Documentos Adjuntos', tipoId: tipoArchivo.id, requerido: false, orden: 90, activo: true, descripcion: 'RNC, Registro Mercantil, Cédula Representante' }
-      );
-    }
-
-    // ============================================================================
-    // NOTA: Los demás productos (LIT-02, LIT-03, LIT-04, ESC-*, AA-*, OC-*) solo usan
-    // los campos globales de obra_generales.php ya que no tienen archivos específicos en SIAONDA V1
-    // ============================================================================
-
+    // Insertar todos los campos
     await prisma.formularioCampo.createMany({
-      data: todosCampos,
+      data: camposData,
       skipDuplicates: true
     });
 
-    console.log(`✅ Creados ${todosCampos.length} campos dinámicos para TODOS los tipos de obras`);
+    console.log(`   ✅ ${camposData.length} campos dinámicos insertados correctamente`);
   } else {
-    console.log('⏭️  Campos dinámicos ya existen, saltando...');
+    console.log('   ⏭️  Campos dinámicos ya existen, saltando...');
   }
 
   console.log('✅ Seeds completados exitosamente!');

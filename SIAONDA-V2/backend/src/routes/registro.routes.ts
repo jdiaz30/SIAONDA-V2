@@ -6,12 +6,15 @@ import {
   asentarObra,
   asentarProduccion,
   devolverAAAU,
+  // devolverProduccionAAU,
   crearRegistrosDesdeFormulario,
   getRegistros,
+  getObrasProduccion,
   getRegistroDetalle,
   actualizarEstadoRegistro,
   generarCertificado,
   subirCertificadoFirmado,
+  // subirMultiplesCertificados,
   uploadCertificado,
   enviarAAAU,
   getRegistrosParaCertificados,
@@ -38,6 +41,9 @@ router.post('/asentar-produccion', asentarProduccion);
 // Devolver obra a AAU
 router.post('/devolver-aau', devolverAAAU);
 
+// Devolver producción completa a AAU (DESHABILITADO - función no implementada)
+// router.post('/devolver-produccion-aau', devolverProduccionAAU);
+
 // Crear registros desde formulario pagado (llamado desde AAU)
 router.post('/crear-desde-formulario', crearRegistrosDesdeFormulario);
 
@@ -45,6 +51,7 @@ router.post('/crear-desde-formulario', crearRegistrosDesdeFormulario);
 router.get('/para-certificados', getRegistrosParaCertificados);
 router.post('/:id/generar-certificado', generarCertificado);
 router.post('/:id/subir-firmado', uploadCertificado.single('certificado'), subirCertificadoFirmado);
+// router.post('/subir-multiples-firmados', uploadCertificado.array('certificados', 20), subirMultiplesCertificados);
 
 // Envío a AAU
 router.get('/listos-aau', getCertificadosListosAAU);
@@ -52,6 +59,9 @@ router.post('/enviar-aau', enviarAAAU);
 
 // Listar registros con filtros
 router.get('/', getRegistros);
+
+// Obtener obras de una producción
+router.get('/produccion/obras', getObrasProduccion);
 
 // Detalle de registro
 router.get('/:id', getRegistroDetalle);

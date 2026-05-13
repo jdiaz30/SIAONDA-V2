@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 
 interface FormularioCampo {
@@ -519,7 +520,7 @@ const ModalFormulario = ({ solicitud, onClose }: ModalFormularioProps) => {
                     )}
                     <div className="bg-white rounded-lg p-3 border border-gray-200">
                       <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Provincia</label>
-                      <div className="text-sm text-gray-900">{solicitud.empresa.provincia.nombre}</div>
+                      <div className="text-sm text-gray-900">{solicitud.empresa.provincia?.nombre || 'N/A'}</div>
                     </div>
                   </div>
                 </div>
@@ -790,6 +791,12 @@ export default function RegistrosAsentamientoPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <div className="flex flex-col gap-2">
+                          <Link
+                            to={`/inspectoria/solicitudes/${solicitud.id}`}
+                            className="px-3 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 text-center"
+                          >
+                            Ver Detalles
+                          </Link>
                           <button
                             onClick={() => {
                               setSolicitudSeleccionada(solicitud);

@@ -7,7 +7,7 @@ import NoAccess from '../../components/common/NoAccess';
 
 interface FormularioDevuelto {
   id: number;
-  tipo: 'OBRA' | 'IRC';
+  tipo: 'OBRA' | 'IRC' | 'PRODUCCIÓN';
   codigo: string;
   fecha: string;
   estado: string;
@@ -17,6 +17,9 @@ interface FormularioDevuelto {
   fechaDevolucion?: string;
   formularioId: number | null;
   solicitudIrcId: number | null;
+  esProduccion?: boolean;
+  tituloProduccion?: string;
+  cantidadObras?: number;
 }
 
 const FormulariosDevueltosPage = () => {
@@ -132,15 +135,31 @@ const FormulariosDevueltosPage = () => {
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                         formulario.tipo === 'IRC'
                           ? 'bg-blue-100 text-blue-800'
+                          : formulario.tipo === 'PRODUCCIÓN'
+                          ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-purple-100 text-purple-800'
                       }`}>
-                        {formulario.tipo === 'IRC' ? '📋 IRC' : '🏗️ OBRA'}
+                        {formulario.tipo === 'IRC' ? '📋 IRC' : formulario.tipo === 'PRODUCCIÓN' ? '🎬 PRODUCCIÓN' : '🏗️ OBRA'}
                       </span>
+                      {formulario.tipo === 'PRODUCCIÓN' && (
+                        <span className="px-3 py-1 bg-yellow-50 text-yellow-700 rounded-full text-xs font-bold border border-yellow-300">
+                          {formulario.cantidadObras} obras
+                        </span>
+                      )}
                       <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold">
                         <FiAlertTriangle className="inline mr-1" />
                         DEVUELTO
                       </span>
                     </div>
+
+                    {/* Título de producción si aplica */}
+                    {formulario.tituloProduccion && (
+                      <div className="mb-3">
+                        <p className="text-sm font-bold text-purple-900">
+                          {formulario.tituloProduccion}
+                        </p>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
@@ -197,10 +216,10 @@ const FormulariosDevueltosPage = () => {
                       </>
                     ) : (
                       <Link
-                        to={`/aau/formularios/obra/${formulario.formularioId}`}
+                        to={`/aau/formularios/${formulario.formularioId}/editar`}
                         className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold text-center shadow-lg transform hover:scale-105 transition-all"
                       >
-                        VER DETALLE Y CORREGIR
+                        CORREGIR AHORA
                       </Link>
                     )}
                   </div>

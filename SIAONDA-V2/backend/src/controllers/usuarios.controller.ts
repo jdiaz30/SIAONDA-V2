@@ -4,6 +4,7 @@ import { prisma } from '../config/database';
 import { hashPassword, comparePassword } from '../utils/bcrypt';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
 import { AuthRequest } from '../middleware/auth';
+import { formatearNombre } from '../utils/formatNombres';
 
 const createUsuarioSchema = z.object({
   nombre: z.string().min(3).max(50),
@@ -43,6 +44,13 @@ export const getUsuarios = asyncHandler(async (req: Request, res: Response) => {
             id: true,
             nombrecompleto: true
           }
+        },
+        sucursal: {
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true
+          }
         }
       },
       orderBy: { nombrecompleto: 'asc' }
@@ -57,9 +65,14 @@ export const getUsuarios = asyncHandler(async (req: Request, res: Response) => {
       codigo: u.codigo,
       nombrecompleto: u.nombrecompleto,
       correo: u.correo,
-      tipo: u.tipo.nombre,
-      estado: u.estado.nombre,
-      supervisor: u.supervisor
+      tipo: formatearNombre(u.tipo.nombre),
+      tipoId: u.tipoId,
+      estado: formatearNombre(u.estado.nombre),
+      estadoId: u.estadoId,
+      supervisor: u.supervisor,
+      supervisorId: u.supervisorId,
+      sucursal: u.sucursal,
+      sucursalId: u.sucursalId
     })),
     pagination: {
       page,
@@ -83,6 +96,13 @@ export const getUsuario = asyncHandler(async (req: Request, res: Response) => {
           id: true,
           nombrecompleto: true
         }
+      },
+      sucursal: {
+        select: {
+          id: true,
+          codigo: true,
+          nombre: true
+        }
       }
     }
   });
@@ -97,12 +117,14 @@ export const getUsuario = asyncHandler(async (req: Request, res: Response) => {
     codigo: usuario.codigo,
     nombrecompleto: usuario.nombrecompleto,
     correo: usuario.correo,
-    tipo: usuario.tipo.nombre,
+    tipo: formatearNombre(usuario.tipo.nombre),
     tipoId: usuario.tipoId,
-    estado: usuario.estado.nombre,
+    estado: formatearNombre(usuario.estado.nombre),
     estadoId: usuario.estadoId,
     supervisor: usuario.supervisor,
-    supervisorId: usuario.supervisorId
+    supervisorId: usuario.supervisorId,
+    sucursal: usuario.sucursal,
+    sucursalId: usuario.sucursalId
   });
 });
 
@@ -137,7 +159,12 @@ export const createUsuario = asyncHandler(async (req: Request, res: Response) =>
 
   const usuario = await prisma.usuario.create({
     data: {
-      ...data,
+      nombre: data.nombre,
+      nombrecompleto: data.nombrecompleto,
+      correo: data.correo,
+      codigo: data.codigo,
+      tipoId: data.tipoId,
+      supervisorId: data.supervisorId,
       contrasena: contrasenaHash,
       estadoId: estadoActivo.id,
       requiereCambioContrasena: true
@@ -306,10 +333,84 @@ export const restablecerContrasena = asyncHandler(async (req: Request, res: Resp
   });
 });
 
+export const activarUsuario = asyncHandler(async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+
+  // Verificar que existe
+  const existente = await prisma.usuario.findUnique({ where: { id } });
+
+  if (!existente) {
+    throw new AppError('Usuario no encontrado', 404);
+  }
+
+  // Activar usuario
+  const estadoActivo = await prisma.usuarioEstado.findFirst({
+    where: { nombre: 'Activo' }
+  });
+
+  if (!estadoActivo) {
+    throw new AppError('Estado activo no configurado', 500);
+  }
+
+  await prisma.usuario.update({
+    where: { id },
+    data: { estadoId: estadoActivo.id }
+  });
+
+  res.json({ message: 'Usuario activado exitosamente' });
+});
+
 export const getTiposUsuario = asyncHandler(async (req: Request, res: Response) => {
   const tipos = await prisma.usuarioTipo.findMany({
     orderBy: { nombre: 'asc' }
   });
 
   res.json(tipos);
+});
+
+/**
+ * Obtener usuarios por tipo (ej: inspectores)
+ */
+export const getUsuariosPorTipo = asyncHandler(async (req: Request, res: Response) => {
+  const { tipoNombre } = req.params;
+
+  // Buscar el tipo de usuario
+  const tipo = await prisma.usuarioTipo.findFirst({
+    where: {
+      nombre: {
+        equals: tipoNombre,
+        mode: 'insensitive'
+      }
+    }
+  });
+
+  if (!tipo) {
+    return res.status(404).json({
+      success: false,
+      message: `Tipo de usuario '${tipoNombre}' no encontrado`
+    });
+  }
+
+  // Obtener usuarios activos de ese tipo
+  const usuarios = await prisma.usuario.findMany({
+    where: {
+      tipoId: tipo.id,
+      estadoId: 1 // Solo activos
+    },
+    select: {
+      id: true,
+      nombre: true,
+      nombrecompleto: true,
+      codigo: true,
+      correo: true
+    },
+    orderBy: {
+      nombrecompleto: 'asc'
+    }
+  });
+
+  res.json({
+    success: true,
+    data: usuarios
+  });
 });

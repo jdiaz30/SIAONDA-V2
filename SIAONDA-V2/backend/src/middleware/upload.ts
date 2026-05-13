@@ -21,17 +21,21 @@ subdirs.forEach(dir => {
 // Configuración de storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Determinar carpeta según tipo
+    console.log('🗂️ Multer destination - req.path:', req.path, 'req.baseUrl:', req.baseUrl, 'file.fieldname:', file.fieldname);
+    // Determinar carpeta según tipo (verificar baseUrl + path)
+    const fullPath = (req.baseUrl || '') + req.path;
     let folder = 'temp';
-    if (req.path.includes('formularios')) {
+
+    if (fullPath.includes('formularios') || fullPath.includes('corregir')) {
       folder = 'formularios';
-    } else if (req.path.includes('clientes')) {
+    } else if (fullPath.includes('clientes')) {
       folder = 'clientes';
-    } else if (req.path.includes('certificados')) {
+    } else if (fullPath.includes('certificados')) {
       folder = 'certificados';
     }
 
     const destPath = path.join(uploadDir, folder);
+    console.log('📁 Ruta completa:', fullPath, '→ Destino:', destPath);
     cb(null, destPath);
   },
   filename: (req, file, cb) => {
@@ -80,8 +84,8 @@ export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB máximo por archivo
-    files: 10 // Máximo 10 archivos por request
+    fileSize: 1024 * 1024 * 1024, // 1GB máximo por archivo
+    files: 20 // Máximo 20 archivos por request
   }
 });
 
@@ -90,12 +94,14 @@ export const handleMulterError = (err: any, req: any, res: any, next: any) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
-        error: 'Archivo muy grande. Tamaño máximo: 50MB'
+        error: 'Archivo muy grande. Tamaño máximo: 1GB',
+        message: 'Archivo muy grande. Tamaño máximo: 1GB'
       });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
       return res.status(400).json({
-        error: 'Demasiados archivos. Máximo: 10 archivos'
+        error: 'Demasiados archivos. Máximo: 20 archivos',
+        message: 'Demasiados archivos. Máximo: 20 archivos'
       });
     }
     return res.status(400).json({

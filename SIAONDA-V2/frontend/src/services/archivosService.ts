@@ -31,14 +31,11 @@ export const archivosService = {
   },
 
   getArchivoUrl: (ruta: string): string => {
-    // El backend sirve los archivos estáticos desde /uploads
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+    // Nginx hace proxy de /uploads/ a backend:3000/uploads/
+    // Construir URL absoluta sin /api/
+    const rutaLimpia = ruta.startsWith('/') ? ruta.substring(1) : ruta;
+    const rutaFinal = rutaLimpia.startsWith('uploads/') ? rutaLimpia : `uploads/${rutaLimpia}`;
 
-    // Si la ruta ya incluye 'uploads', no la duplicamos
-    if (ruta.startsWith('uploads/')) {
-      return `${baseUrl}/${ruta}`;
-    }
-
-    return `${baseUrl}/uploads/${ruta}`;
+    return `${window.location.protocol}//${window.location.host}/${rutaFinal}`;
   },
 };

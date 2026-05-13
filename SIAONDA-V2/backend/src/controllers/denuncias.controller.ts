@@ -497,3 +497,288 @@ export const asignarInspector = async (req: AuthRequest, res: Response) => {
     });
   }
 };
+
+/**
+ * LISTAR DENUNCIAS PAGADAS (Inspectoría)
+ * Denuncias en estado PAGADA que aún no tienen caso generado
+ */
+export const listarDenunciasPagadas = async (req: AuthRequest, res: Response) => {
+  try {
+    const { page = 1, limit = 20, search } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Obtener estado PAGADA
+    const estadoPagada = await prisma.estadoDenuncia.findFirst({
+      where: { nombre: 'PAGADA' }
+    });
+
+    if (!estadoPagada) {
+      return res.status(500).json({
+        success: false,
+        message: 'Estado PAGADA no encontrado'
+      });
+    }
+
+    const where: any = {
+      estadoDenunciaId: estadoPagada.id,
+      casoGeneradoId: null // Solo denuncias sin caso generado
+    };
+
+    if (search) {
+      where.OR = [
+        { codigo: { contains: String(search), mode: 'insensitive' } },
+        { denuncianteNombre: { contains: String(search), mode: 'insensitive' } },
+        { empresaDenunciada: { contains: String(search), mode: 'insensitive' } }
+      ];
+    }
+
+    const [denuncias, total] = await Promise.all([
+      prisma.denuncia.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        orderBy: { id: 'desc' },
+        include: {
+          estadoDenuncia: true,
+          factura: {
+            select: {
+              id: true,
+              codigo: true,
+              total: true,
+              estadoId: true
+            }
+          },
+          recibidoPor: {
+            select: {
+              id: true,
+              nombrecompleto: true
+            }
+          }
+        }
+      }),
+      prisma.denuncia.count({ where })
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        denuncias,
+        total,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error al listar denuncias pagadas:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al listar denuncias pagadas',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * CONVERTIR DENUNCIA EN CASO DE INSPECCIÓN
+ */
+export const convertirDenunciaEnCaso = async (req: AuthRequest, res: Response) => {
+  try {
+    const { denunciaId } = req.params;
+    const { descripcionCaso } = req.body;
+    const usuarioId = req.usuario?.id;
+
+    if (!usuarioId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Usuario no autenticado'
+      });
+    }
+
+    // Verificar que la denuncia existe y está PAGADA
+    const denuncia = await prisma.denuncia.findUnique({
+      where: { id: Number(denunciaId) },
+      include: {
+        estadoDenuncia: true,
+        factura: true
+      }
+    });
+
+    if (!denuncia) {
+      return res.status(404).json({
+        success: false,
+        message: 'Denuncia no encontrada'
+      });
+    }
+
+    if (denuncia.estadoDenuncia.nombre !== 'PAGADA') {
+      return res.status(400).json({
+        success: false,
+        message: 'La denuncia debe estar en estado PAGADA'
+      });
+    }
+
+    if (denuncia.casoGeneradoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Esta denuncia ya tiene un caso generado'
+      });
+    }
+
+    // Obtener estado EN_PLANIFICACION para la denuncia
+    const estadoEnPlanificacion = await prisma.estadoDenuncia.findFirst({
+      where: { nombre: 'EN_PLANIFICACION' }
+    });
+
+    if (!estadoEnPlanificacion) {
+      return res.status(500).json({
+        success: false,
+        message: 'Estado EN_PLANIFICACION no encontrado'
+      });
+    }
+
+    // Obtener estado inicial del caso (RECIBIDO o PENDIENTE)
+    const estadoCasoPendiente = await prisma.estadoCasoInspeccion.findFirst({
+      where: { nombre: 'PENDIENTE' }
+    });
+
+    if (!estadoCasoPendiente) {
+      return res.status(500).json({
+        success: false,
+        message: 'Estado PENDIENTE para casos no encontrado'
+      });
+    }
+
+    // Obtener status inicial (ACTIVO)
+    const statusActivo = await prisma.statusInspeccion.findFirst({
+      where: { nombre: 'ACTIVO' }
+    });
+
+    if (!statusActivo) {
+      return res.status(500).json({
+        success: false,
+        message: 'Status ACTIVO no encontrado'
+      });
+    }
+
+    // Buscar si ya existe empresa con ese nombre
+    let empresaId: number | null = null;
+    const empresaExistente = await prisma.empresaInspeccionada.findFirst({
+      where: {
+        nombreEmpresa: {
+          contains: denuncia.empresaDenunciada,
+          mode: 'insensitive'
+        }
+      }
+    });
+
+    if (empresaExistente) {
+      empresaId = empresaExistente.id;
+    } else {
+      // Obtener una categoría IRC por defecto (la primera disponible)
+      const categoriaDefault = await prisma.categoriaIrc.findFirst({
+        orderBy: { id: 'asc' }
+      });
+
+      if (!categoriaDefault) {
+        return res.status(500).json({
+          success: false,
+          message: 'No hay categorías IRC disponibles en el sistema'
+        });
+      }
+
+      // Crear empresa temporal basada en la denuncia
+      const nuevaEmpresa = await prisma.empresaInspeccionada.create({
+        data: {
+          nombreEmpresa: denuncia.empresaDenunciada,
+          direccion: denuncia.direccionEmpresa || 'Por completar',
+          rnc: `TEMP-${Date.now()}`, // RNC temporal único
+          tipoPersona: 'JURIDICA', // Por defecto empresas son personas jurídicas
+          telefono: denuncia.denuncianteTelefono || 'Por completar',
+          email: denuncia.denuncianteEmail || 'porcompletar@temp.com',
+          descripcionActividades: `Empresa denunciada. Descripción: ${denuncia.descripcionHechos.substring(0, 200)}...`,
+          categoriaIrcId: categoriaDefault.id,
+          statusId: statusActivo.id,
+          registrado: false,
+          existeEnSistema: false,
+          creadoPorId: usuarioId
+        }
+      });
+      empresaId = nuevaEmpresa.id;
+    }
+
+    // Generar código del caso
+    const año = new Date().getFullYear();
+    const ultimoCaso = await prisma.casoInspeccion.findFirst({
+      where: {
+        codigo: {
+          startsWith: `CASO-INSP-${año}`
+        }
+      },
+      orderBy: { codigo: 'desc' }
+    });
+
+    let numero = 1;
+    if (ultimoCaso) {
+      const match = ultimoCaso.codigo.match(/CASO-INSP-\d{4}-(\d{4})/);
+      if (match) {
+        numero = parseInt(match[1]) + 1;
+      }
+    }
+
+    const codigoCaso = `CASO-INSP-${año}-${numero.toString().padStart(4, '0')}`;
+
+    // Crear el caso de inspección
+    const observacionesCaso = descripcionCaso || `Caso generado desde denuncia ${denuncia.codigo}\n\nDescripción de hechos:\n${denuncia.descripcionHechos}\n\nDenunciante: ${denuncia.denuncianteNombre}\nContacto: ${denuncia.denuncianteTelefono || 'No especificado'}`;
+
+    const caso = await prisma.casoInspeccion.create({
+      data: {
+        codigo: codigoCaso,
+        empresaId,
+        tipoCaso: 'DENUNCIA',
+        origenCaso: 'DENUNCIA_CIUDADANA',
+        estadoCasoId: estadoCasoPendiente.id,
+        statusId: statusActivo.id,
+        prioridad: 'ALTA', // Denuncias son prioridad alta
+        facturaId: denuncia.facturaId,
+        asignadoPorId: usuarioId,
+        observaciones: observacionesCaso
+      }
+    });
+
+    // Actualizar la denuncia
+    const denunciaActualizada = await prisma.denuncia.update({
+      where: { id: Number(denunciaId) },
+      data: {
+        casoGeneradoId: caso.id,
+        estadoDenunciaId: estadoEnPlanificacion.id
+      },
+      include: {
+        estadoDenuncia: true,
+        casoGenerado: {
+          include: {
+            estadoCaso: true,
+            empresa: true
+          }
+        }
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Caso de inspección creado exitosamente',
+      data: {
+        denuncia: denunciaActualizada,
+        caso
+      }
+    });
+  } catch (error) {
+    console.error('Error al convertir denuncia en caso:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al convertir denuncia en caso',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};

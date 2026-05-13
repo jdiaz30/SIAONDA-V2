@@ -56,7 +56,7 @@ const UsuariosPage = () => {
       setError('');
 
       const [usuariosData, tiposData] = await Promise.all([
-        usuariosService.getUsuarios(page, 20),
+        usuariosService.getUsuarios(page, 10),
         usuariosService.getTiposUsuario()
       ]);
 
@@ -128,9 +128,7 @@ const UsuariosPage = () => {
       if (usuario.estado === 'Activo') {
         await usuariosService.deleteUsuario(usuario.id);
       } else {
-        // Activar (cambiar estadoId a activo)
-        const estadoActivo = 1; // Asumiendo que 1 es Activo
-        await usuariosService.updateUsuario(usuario.id, { estadoId: estadoActivo });
+        await usuariosService.activarUsuario(usuario.id);
       }
       await cargarDatos();
       alert(`Usuario ${accion === 'desactivar' ? 'desactivado' : 'activado'} exitosamente`);
@@ -288,7 +286,7 @@ const UsuariosPage = () => {
           onToggleEstado={handleToggleEstado}
         />
 
-        {/* Paginación (si hay más de 20 usuarios) */}
+        {/* Paginación (si hay más de 10 usuarios) */}
         {totalPages > 1 && (
           <div className="p-4 border-t border-gray-200 flex items-center justify-between">
             <div className="text-sm text-gray-700">

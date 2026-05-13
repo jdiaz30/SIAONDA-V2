@@ -303,9 +303,9 @@ export const getEstadosNuevoFlujo = async (req: Request, res: Response) => {
  */
 export const getInspectores = async (req: Request, res: Response) => {
   try {
-    // Buscar usuarios con tipo "Inspector" y estado activo
+    // Buscar usuarios con tipo "INSPECTORIA" y estado activo
     const tipoInspector = await prisma.usuarioTipo.findFirst({
-      where: { nombre: 'Inspector' }
+      where: { nombre: 'INSPECTORIA' }
     });
 
     if (!tipoInspector) {

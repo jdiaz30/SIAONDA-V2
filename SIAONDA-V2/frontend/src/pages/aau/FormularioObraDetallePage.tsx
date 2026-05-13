@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { FiArrowLeft, FiUser, FiFileText, FiAlertCircle } from 'react-icons/fi';
+import { FiArrowLeft, FiUser, FiFileText, FiAlertCircle, FiClock } from 'react-icons/fi';
 import { api } from '../../services/api';
+import FormularioHistorialTimeline from '../../components/formularios/FormularioHistorialTimeline';
 
 interface Formulario {
   id: number;
@@ -43,10 +44,13 @@ interface Formulario {
 const FormularioObraDetallePage = () => {
   const { id } = useParams();
   const [formulario, setFormulario] = useState<Formulario | null>(null);
+  const [historial, setHistorial] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
 
   useEffect(() => {
     cargarFormulario();
+    cargarHistorial();
   }, [id]);
 
   const cargarFormulario = async () => {
@@ -58,6 +62,19 @@ const FormularioObraDetallePage = () => {
       console.error('Error al cargar formulario:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const cargarHistorial = async () => {
+    try {
+      setLoadingHistorial(true);
+      const response = await api.get(`/formularios/${id}/historial`);
+      setHistorial(response.data.data || []);
+    } catch (error) {
+      console.error('Error al cargar historial:', error);
+      setHistorial([]);
+    } finally {
+      setLoadingHistorial(false);
     }
   };
 
@@ -244,6 +261,22 @@ const FormularioObraDetallePage = () => {
             </Link>
           </div>
         </div>
+      </div>
+
+      {/* Historial del Formulario */}
+      <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <FiClock className="text-2xl text-blue-600" />
+          <h2 className="text-xl font-bold text-gray-900">Historial de Cambios</h2>
+        </div>
+
+        {loadingHistorial ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
+          <FormularioHistorialTimeline historial={historial} />
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,18 @@
+﻿====================================
+RESUMEN DEL RESPALDO
+====================================
+Fecha: 03/20/2026 11:29:21
+Sistema: SIAONDA V2
+
+Archivos generados:
+  - siaonda_backup_20260320_112919.sql
+  - siaonda_uploads_20260320_112919.tar.gz
+
+Estadisticas de la base de datos:
+ Registros: 42
+ Formularios: 46
+ Certificados: 0
+ Facturas: 32
+ Clientes: 5
+ Usuarios: 12
+

@@ -171,6 +171,7 @@ export const listarEmpresas = async (req: AuthRequest, res: Response) => {
   try {
     const {
       search,
+      rnc,
       categoriaIrcId,
       provinciaId,
       statusId,
@@ -185,7 +186,13 @@ export const listarEmpresas = async (req: AuthRequest, res: Response) => {
     // Construir filtros
     const where: any = {};
 
-    if (search) {
+    // Búsqueda exacta por RNC (para renovaciones)
+    if (rnc) {
+      const rncLimpio = String(rnc).replace(/[-\s]/g, ''); // Remover guiones y espacios
+      where.rnc = { contains: rncLimpio, mode: 'insensitive' };
+    }
+    // Búsqueda general (nombre, rnc, etc.)
+    else if (search) {
       where.OR = [
         { rnc: { contains: String(search), mode: 'insensitive' } },
         { nombreEmpresa: { contains: String(search), mode: 'insensitive' } },
@@ -234,7 +241,10 @@ export const listarEmpresas = async (req: AuthRequest, res: Response) => {
           status: true,
           estadoJuridico: true,
           conclusion: true,
-          statusExterno: true
+          statusExterno: true,
+          consejoAdministracion: true,
+          principalesClientes: true,
+          documentos: true
         },
         orderBy: { creadoEn: 'desc' },
         skip,
@@ -580,6 +590,126 @@ export const obtenerEmpresasPorVencer = async (req: AuthRequest, res: Response) 
     return res.status(500).json({
       success: false,
       message: 'Error al obtener empresas por vencer',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * POST /api/inspectoria/empresas/vigente
+ * Registrar empresa que ya tiene IRC vigente (migración manual)
+ * No genera factura ni solicitud
+ */
+export const registrarEmpresaVigente = async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      nombreEmpresa,
+      nombreComercial,
+      rnc,
+      categoriaIrcId,
+      tipoPersona,
+      nombrePropietario,
+      cedulaPropietario,
+      descripcionActividades,
+      direccion,
+      provinciaId,
+      telefono,
+      correoElectronico,
+      observaciones,
+      consejoAdministracion,
+      principalesClientes,
+      subcategoriaIrc,
+      anosVigencia,
+      fechaInicioVigencia,
+      fechaVencimiento
+    } = req.body;
+
+    // Validar RNC
+    if (!rnc || !validarRNC(rnc)) {
+      return res.status(400).json({
+        success: false,
+        message: 'RNC inválido'
+      });
+    }
+
+    const rncNormalizado = normalizarRNC(rnc);
+
+    // Verificar si ya existe
+    const empresaExistente = await prisma.empresaInspeccionada.findUnique({
+      where: { rnc: rncNormalizado }
+    });
+
+    if (empresaExistente) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ya existe una empresa con este RNC'
+      });
+    }
+
+    // Obtener status "ACTIVA" y otros defaults
+    const statusActiva = await prisma.statusInspeccion.findFirst({
+      where: { nombre: 'ACTIVA' }
+    });
+
+    // Crear empresa marcada como registrada y vigente
+    const empresa = await prisma.empresaInspeccionada.create({
+      data: {
+        nombreEmpresa,
+        nombreComercial: nombreComercial || null,
+        rnc: rncNormalizado,
+        direccion,
+        telefono: telefono || '',
+        email: correoElectronico || '',
+        categoriaIrcId: parseInt(categoriaIrcId),
+        tipoPersona,
+        nombrePropietario: nombrePropietario || null,
+        cedulaPropietario: cedulaPropietario || null,
+        descripcionActividades: descripcionActividades || '',
+        provinciaId: provinciaId ? parseInt(provinciaId) : null,
+        statusId: statusActiva?.id || 1,
+        estadoJuridicoId: 1,
+        conclusionId: 1,
+        statusExternoId: 8,
+        registrado: true, // Marca como registrado
+        existeEnSistema: true,
+        comentario: `Empresa vigente migrada manualmente. Vigencia: ${fechaInicioVigencia} a ${fechaVencimiento}. ${observaciones || ''}`,
+        fechaVencimiento: fechaVencimiento ? new Date(fechaVencimiento) : null,
+        creadoPorId: req.usuario?.id || 1,
+        consejoAdministracion: {
+          create: (consejoAdministracion || []).map((m: any) => ({
+            nombreCompleto: m.nombreCompleto,
+            cargo: m.cargo,
+            cedula: m.cedula || null,
+            domicilio: m.domicilio || null,
+            telefono: m.telefono || null,
+            celular: m.celular || null,
+            email: m.email || null
+          }))
+        },
+        principalesClientes: {
+          create: (principalesClientes || []).map((c: any, index: number) => ({
+            nombreCliente: c.nombreCliente,
+            descripcion: c.descripcion || null,
+            orden: index + 1
+          }))
+        }
+      },
+      include: {
+        categoriaIrc: true,
+        provincia: true
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Empresa vigente registrada exitosamente',
+      data: empresa
+    });
+  } catch (error) {
+    console.error('Error al registrar empresa vigente:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al registrar empresa vigente',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }

@@ -311,7 +311,7 @@ export default function SolicitudWorkflowPage() {
           </p>
         </div>
         <button
-          onClick={() => navigate('/inspectoria/solicitudes')}
+          onClick={() => navigate(-1)}
           className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
         >
           Volver al Listado

@@ -62,31 +62,41 @@ export const getEstadisticasDashboard = asyncHandler(async (req: Request, res: R
   const estadoObraDevuelto = await prisma.formularioEstado.findUnique({ where: { nombre: 'DEVUELTO' } });
   const estadoObraCertificado = await prisma.formularioEstado.findUnique({ where: { nombre: 'CERTIFICADO' } });
 
+  // Función helper para contar formularios agrupando producciones
+  const contarFormulariosAgrupados = async (estadoId: number): Promise<number> => {
+    const formularios = await prisma.formulario.findMany({
+      where: {
+        estadoId: estadoId,
+        solicitudIrcId: null
+      }
+    });
+
+    // Agrupar producciones
+    const produccionesVistas = new Set<number>();
+    let count = 0;
+
+    for (const formulario of formularios) {
+      const esProduccion = formulario.esProduccion || formulario.produccionPadreId !== null;
+
+      if (esProduccion) {
+        const formularioPadreId = formulario.produccionPadreId || formulario.id;
+        if (!produccionesVistas.has(formularioPadreId)) {
+          produccionesVistas.add(formularioPadreId);
+          count++;
+        }
+      } else {
+        count++;
+      }
+    }
+
+    return count;
+  };
+
   const [obrasPendientes, obrasEnRevision, obrasDevueltas, obrasCertificadas] = await Promise.all([
-    estadoObraPendiente ? prisma.formulario.count({
-      where: {
-        estadoId: estadoObraPendiente.id,
-        solicitudIrcId: null // Solo obras
-      }
-    }) : Promise.resolve(0),
-    estadoObraEnRevision ? prisma.formulario.count({
-      where: {
-        estadoId: estadoObraEnRevision.id,
-        solicitudIrcId: null
-      }
-    }) : Promise.resolve(0),
-    estadoObraDevuelto ? prisma.formulario.count({
-      where: {
-        estadoId: estadoObraDevuelto.id,
-        solicitudIrcId: null
-      }
-    }) : Promise.resolve(0),
-    estadoObraCertificado ? prisma.formulario.count({
-      where: {
-        estadoId: estadoObraCertificado.id,
-        solicitudIrcId: null
-      }
-    }) : Promise.resolve(0),
+    estadoObraPendiente ? contarFormulariosAgrupados(estadoObraPendiente.id) : Promise.resolve(0),
+    estadoObraEnRevision ? contarFormulariosAgrupados(estadoObraEnRevision.id) : Promise.resolve(0),
+    estadoObraDevuelto ? contarFormulariosAgrupados(estadoObraDevuelto.id) : Promise.resolve(0),
+    estadoObraCertificado ? contarFormulariosAgrupados(estadoObraCertificado.id) : Promise.resolve(0),
   ]);
 
   // Totales combinados
@@ -347,6 +357,7 @@ export const getFormulariosDevueltos = asyncHandler(async (req: Request, res: Re
     where: {
       estadoId: estadoDevuelto.id,
       solicitudIrcId: null, // Solo obras, no IRC
+      produccionPadreId: null, // Excluir obras hijas de producciones, solo traer padres y obras individuales
     },
     include: {
       estado: true,
@@ -380,6 +391,12 @@ export const getFormulariosDevueltos = asyncHandler(async (req: Request, res: Re
           },
         },
       },
+      // Incluir obras hijas de la producción para saber la cantidad
+      obrasHijas: {
+        select: {
+          id: true,
+        },
+      },
     },
   }) : [];
 
@@ -404,7 +421,7 @@ export const getFormulariosDevueltos = asyncHandler(async (req: Request, res: Re
     // Formularios de obras devueltas
     ...formulariosObras.map(f => ({
       id: f.id,
-      tipo: 'OBRA',
+      tipo: f.esProduccion ? 'PRODUCCIÓN' : 'OBRA',
       codigo: f.codigo,
       fecha: f.fecha,
       estado: f.estado.nombre,
@@ -414,6 +431,9 @@ export const getFormulariosDevueltos = asyncHandler(async (req: Request, res: Re
       fechaDevolucion: f.fechaDevolucion,
       formularioId: f.id,
       solicitudIrcId: null,
+      esProduccion: f.esProduccion,
+      tituloProduccion: f.tituloProduccion,
+      cantidadObras: f.esProduccion ? f.obrasHijas.length : 1,
     })),
     // Solicitudes IRC devueltas
     ...solicitudesIrcDevueltas.map((s: any) => ({
@@ -428,6 +448,8 @@ export const getFormulariosDevueltos = asyncHandler(async (req: Request, res: Re
       fechaDevolucion: s.fechaDevolucion,
       formularioId: null,
       solicitudIrcId: s.id,
+      esProduccion: false,
+      cantidadObras: 1,
     })),
   ];
 
@@ -504,7 +526,7 @@ export const getCertificadosPendientes = asyncHandler(async (req: Request, res: 
     where: { nombre: 'CERTIFICADO' },
   });
 
-  const formulariosObras = estadoCertificado ? await prisma.formulario.findMany({
+  const formulariosObrasTodos = estadoCertificado ? await prisma.formulario.findMany({
     where: {
       estadoId: estadoCertificado.id,
       solicitudIrcId: null, // Solo obras
@@ -567,6 +589,47 @@ export const getCertificadosPendientes = asyncHandler(async (req: Request, res: 
     },
   }) : [];
 
+  // AGRUPAR PRODUCCIONES - Solo mostrar UNA entrada por producción
+  const produccionesVistas = new Set<number>();
+  const formulariosObras: any[] = [];
+
+  for (const formulario of formulariosObrasTodos) {
+    const esProduccion = formulario.esProduccion || formulario.produccionPadreId !== null;
+
+    if (esProduccion) {
+      // Es parte de una producción
+      const formularioPadreId = formulario.produccionPadreId || formulario.id;
+
+      // Si ya agregamos esta producción, saltarla
+      if (produccionesVistas.has(formularioPadreId)) {
+        continue;
+      }
+
+      // Marcar como vista
+      produccionesVistas.add(formularioPadreId);
+
+      // Contar todas las obras de esta producción
+      const obrasProduccion = formulariosObrasTodos.filter(f => {
+        return f.id === formularioPadreId || f.produccionPadreId === formularioPadreId;
+      });
+
+      // Agregar metadata de producción
+      formulariosObras.push({
+        ...formulario,
+        esProduccion: true,
+        cantidadObras: obrasProduccion.length,
+        tituloProduccion: formulario.tituloProduccion
+      });
+    } else {
+      // No es producción, agregar normal
+      formulariosObras.push({
+        ...formulario,
+        esProduccion: false,
+        cantidadObras: 1
+      });
+    }
+  }
+
   // 2. Obtener solicitudes IRC con certificados cargados (listas para entrega)
   const estadoIrcCertificadoCargado = await prisma.estadoSolicitudInspeccion.findUnique({
     where: { nombre: 'CERTIFICADO_CARGADO' },
@@ -604,20 +667,29 @@ export const getCertificadosPendientes = asyncHandler(async (req: Request, res: 
     // Certificados de obras
     ...formulariosObras.map(f => {
       const registro = f.productos[0]?.registros?.[0];
+      const categoria = f.esProduccion
+        ? 'PRODUCCIÓN'
+        : (f.productos[0]?.producto.categoria || 'Sin categoría');
+      const codigo = f.esProduccion && f.tituloProduccion
+        ? f.tituloProduccion
+        : f.codigo;
+
       return {
         id: f.id,
         tipo: 'OBRA',
-        codigo: f.codigo,
+        codigo: codigo,
         fecha: f.fecha,
         estado: f.estado.nombre,
         clienteNombre: f.clientes[0]?.cliente.nombrecompleto || 'Sin cliente',
         clienteTelefono: f.clientes[0]?.cliente.telefono || f.clientes[0]?.cliente.movil || 'Sin teléfono',
-        categoria: f.productos[0]?.producto.categoria || 'Sin categoría',
+        categoria: categoria,
         certificadoCodigo: registro?.numeroRegistro || f.certificados[0]?.codigo || null,
         certificadoFecha: registro?.fechaGeneracionCert || f.certificados[0]?.fechaEmision || null,
         certificadoPdfUrl: registro?.certificadoFirmado || null,
         formularioId: f.id,
         solicitudIrcId: null,
+        esProduccion: f.esProduccion || false,
+        cantidadObras: f.cantidadObras || 1,
       };
     }),
     // Certificados IRC
@@ -879,18 +951,39 @@ export const entregarCertificado = asyncHandler(async (req: Request, res: Respon
     const cliente = formulario.clientes[0]?.cliente;
     const producto = formulario.productos[0]?.producto;
 
-    // Usar transacción para actualizar formulario y crear registro de entrega
-    const [formularioActualizado] = await prisma.$transaction([
-      prisma.formulario.update({
-        where: { id: parseInt(id) },
+    // Detectar si es una producción y obtener todos los formularios relacionados
+    const esProduccion = formulario.esProduccion || formulario.produccionPadreId !== null;
+    let formularioIds: number[] = [parseInt(id)];
+
+    if (esProduccion) {
+      // Determinar el ID del formulario padre
+      const formularioPadreId = formulario.produccionPadreId || formulario.id;
+
+      // Obtener todos los formularios de la producción (padre + hijos)
+      const formulariosProd = await prisma.formulario.findMany({
+        where: {
+          OR: [
+            { id: formularioPadreId },
+            { produccionPadreId: formularioPadreId }
+          ]
+        },
+        select: { id: true }
+      });
+
+      formularioIds = formulariosProd.map(f => f.id);
+    }
+
+    // Usar transacción para actualizar formulario(s) y crear registro de entrega
+    await prisma.$transaction([
+      // Actualizar TODOS los formularios de la producción (o solo uno si no es producción)
+      prisma.formulario.updateMany({
+        where: { id: { in: formularioIds } },
         data: {
           estadoId: estadoEntregado.id,
           fechaEntrega: new Date(),
         },
-        include: {
-          estado: true,
-        },
       }),
+      // Crear solo UN registro de entrega para la producción
       prisma.historialEntrega.create({
         data: {
           tipo: 'OBRA',
@@ -908,6 +1001,12 @@ export const entregarCertificado = asyncHandler(async (req: Request, res: Respon
         },
       }),
     ]);
+
+    // Obtener el formulario actualizado para devolverlo
+    const formularioActualizado = await prisma.formulario.findUnique({
+      where: { id: parseInt(id) },
+      include: { estado: true },
+    });
 
     return res.json({
       message: 'Certificado de obra entregado exitosamente',
@@ -1058,12 +1157,34 @@ export const getHistorialEntregas = asyncHandler(async (req: Request, res: Respo
           select: {
             id: true,
             codigo: true,
+            // Incluir productos para obtener los registros y sus certificados
+            productos: {
+              select: {
+                registros: {
+                  select: {
+                    certificadoFirmado: true,
+                    certificadoGenerado: true,
+                  },
+                  where: {
+                    certificadoFirmado: { not: null }
+                  },
+                  take: 1
+                }
+              },
+              take: 1
+            }
           },
         },
         solicitudIrc: {
           select: {
             id: true,
             codigo: true,
+            certificado: {
+              select: {
+                rutaPdfFirmado: true,
+                rutaPdf: true,
+              },
+            },
           },
         },
       },
@@ -1076,8 +1197,36 @@ export const getHistorialEntregas = asyncHandler(async (req: Request, res: Respo
     prisma.historialEntrega.count({ where }),
   ]);
 
+  // Enriquecer las entregas con la ruta del certificado
+  const entregasConCertificado = entregas.map(entrega => {
+    let certificadoPdfUrl = null;
+
+    if (entrega.tipo === 'OBRA' && entrega.formulario) {
+      // Buscar el certificado en el primer registro del primer producto
+      const primerProducto = entrega.formulario.productos?.[0];
+      const primerRegistro = primerProducto?.registros?.[0];
+      if (primerRegistro?.certificadoFirmado) {
+        certificadoPdfUrl = primerRegistro.certificadoFirmado;
+      } else if (primerRegistro?.certificadoGenerado) {
+        certificadoPdfUrl = primerRegistro.certificadoGenerado;
+      }
+    } else if (entrega.tipo === 'IRC' && entrega.solicitudIrc) {
+      // Para IRC, usar el certificado firmado o generado
+      if (entrega.solicitudIrc.certificado?.rutaPdfFirmado) {
+        certificadoPdfUrl = entrega.solicitudIrc.certificado.rutaPdfFirmado;
+      } else if (entrega.solicitudIrc.certificado?.rutaPdf) {
+        certificadoPdfUrl = entrega.solicitudIrc.certificado.rutaPdf;
+      }
+    }
+
+    return {
+      ...entrega,
+      certificadoPdfUrl
+    };
+  });
+
   res.json({
-    data: entregas,
+    data: entregasConCertificado,
     pagination: {
       total,
       page: pageNum,
@@ -1252,6 +1401,11 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
   const empresaDataActualizada = req.body.empresaDataActualizada ? JSON.parse(req.body.empresaDataActualizada as string) : null;
   const clienteId: number | null = req.body.clienteId ? parseInt(req.body.clienteId as string) : null;
 
+  // Nuevos parámetros para subcategorías y vigencia
+  const subcategoriaIrc = req.body.subcategoriaIrc as string || null;
+  const anosVigencia = req.body.anosVigencia ? parseInt(req.body.anosVigencia as string) : 1;
+  const montoTotal = req.body.montoTotal ? parseFloat(req.body.montoTotal as string) : null;
+
   // Obtener archivos adjuntos
   const archivos = req.files as Express.Multer.File[];
 
@@ -1314,21 +1468,17 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
           provinciaId: empresaData.provinciaId,
           statusId: 1,
           estadoJuridicoId: 1,
-          conclusionId: 1,
-          statusExternoId: 8,
+          // conclusionId: null, // No asignar conclusión al crear empresa nueva
+          statusExternoId: 12, // NUEVO - empresa nueva sin registro
           registrado: false,
           existeEnSistema: true,
           comentario: empresaData.observaciones,
           creadoPorId: 1,
           consejoAdministracion: {
             create: (empresaData.consejoAdministracion || []).map((m: any) => ({
-              nombreCompleto: m.nombreCompleto,
+              nombre: m.nombreCompleto,
               cargo: m.cargo,
-              cedula: m.cedula,
-              domicilio: m.domicilio,
-              telefono: m.telefono,
-              celular: m.celular,
-              email: m.email
+              cedula: m.cedula
             }))
           },
           principalesClientes: {
@@ -1391,7 +1541,17 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
     const empresaResult = await prisma.empresaInspeccionada.findUnique({
       where: { id: empresaIdFinal! },
       include: {
-        categoriaIrc: true
+        categoriaIrc: {
+          select: {
+            id: true,
+            codigo: true,
+            nombre: true,
+            descripcion: true,
+            precio: true,
+            subcategorias: true,
+            activo: true
+          }
+        }
       }
     });
 
@@ -1443,40 +1603,39 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
 
     clienteIdFinal = cliente.id;
 
-    // Verificar que haya una caja abierta
-    const cajaAbierta = await prisma.caja.findFirst({
-      where: {
-        estadoId: 1, // Abierta
-        horaCierre: null
-      }
-    });
+    // NO SE REQUIERE CAJA ABIERTA - La solicitud IRC se crea con estado PENDIENTE
+    // y cuando haya una caja abierta, aparecerá en los cobros pendientes
+    // La factura se creará cuando se cobre en caja
 
-    if (!cajaAbierta) {
-      return res.status(400).json({
-        success: false,
-        message: 'No hay una caja abierta. Debe abrir una caja primero.'
-      });
-    }
-
-    // Obtener estado "Abierta" para la factura
-    const estadoFacturaAbierta = await prisma.facturaEstado.findFirst({
-      where: { nombre: 'Abierta' }
-    });
-
-    if (!estadoFacturaAbierta) {
-      throw new Error('Estado Abierta no configurado para facturas');
-    }
-
-    // Generar código de factura
-    const ultimaFactura = await prisma.factura.findFirst({
-      orderBy: { id: 'desc' }
-    });
-    const numeroFactura = ultimaFactura ? ultimaFactura.id + 1 : 1;
-    const codigoFactura = `FAC-${year}-${numeroFactura.toString().padStart(6, '0')}`;
-
-    // Calcular totales basados en el precio de la categoría IRC
+    // Calcular totales basados en el precio de la categoría IRC con subcategorías y años
     // IRC NO lleva ITBIS
-    const precioCategoria = Number(empresa.categoriaIrc.precio);
+    let precioBase = Number(empresa.categoriaIrc.precio);
+
+    console.log('=== CÁLCULO DE PRECIO IRC ===');
+    console.log('Categoría:', empresa.categoriaIrc.codigo, empresa.categoriaIrc.nombre);
+    console.log('Precio base categoría:', precioBase);
+    console.log('Subcategoría IRC recibida:', subcategoriaIrc);
+    console.log('Años de vigencia:', anosVigencia);
+    console.log('Tiene subcategorías:', !!empresa.categoriaIrc.subcategorias);
+
+    // Si hay subcategoría, obtener el precio de la subcategoría
+    if (subcategoriaIrc && empresa.categoriaIrc.subcategorias) {
+      const subcategorias = empresa.categoriaIrc.subcategorias as any;
+      console.log('Subcategorías disponibles:', JSON.stringify(subcategorias));
+      if (Array.isArray(subcategorias)) {
+        const subcategoria = subcategorias.find((s: any) => s.codigo === subcategoriaIrc);
+        console.log('Subcategoría encontrada:', JSON.stringify(subcategoria));
+        if (subcategoria && subcategoria.precio) {
+          precioBase = Number(subcategoria.precio);
+          console.log('Precio base actualizado a subcategoría:', precioBase);
+        }
+      }
+    }
+
+    // Multiplicar por años de vigencia
+    const precioCategoria = precioBase * anosVigencia;
+    console.log('Precio total calculado:', precioCategoria);
+    console.log('=== FIN CÁLCULO ===');
     const subtotal = precioCategoria;
     const itbis = 0; // IRC sin ITBIS
     const total = subtotal;
@@ -1493,9 +1652,9 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
       });
     }
 
-    // Crear todo en una transacción: Solicitud IRC -> Formulario -> Factura
+    // Crear solicitud IRC sin factura - La factura se creará cuando se cobre en caja
     const resultado = await prisma.$transaction(async (tx) => {
-      // 1. Crear solicitud IRC primero
+      // 1. Crear solicitud IRC con estado PENDIENTE (sin factura)
       const solicitud = await tx.solicitudRegistroInspeccion.create({
         data: {
           codigo,
@@ -1505,67 +1664,28 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
           nombreEmpresa: empresa.nombreEmpresa,
           nombreComercial: empresa.nombreComercial,
           categoriaIrcId: empresa.categoriaIrcId,
-          estadoId: 1, // PENDIENTE
-          recibidoPorId: 1,
-          fechaRecepcion: new Date()
+          estadoId: 1, // PENDIENTE - esperando pago en caja
+          recibidoPorId: (req as AuthRequest).usuario?.id || 1,
+          fechaRecepcion: new Date(),
+          anosVigencia: anosVigencia || 1, // Años de vigencia seleccionados
+          observaciones: subcategoriaIrc ? `Subcategoría: ${subcategoriaIrc}` : undefined
         }
       });
 
-      // 2. Crear factura en estado ABIERTA
-      const factura = await tx.factura.create({
-        data: {
-          codigo: codigoFactura,
-          ncf: null, // Sin NCF inicialmente
-          rnc: null,
-          fecha: new Date(),
-          subtotal,
-          itbis,
-          descuento: 0,
-          total,
-          pagado: 0,
-          metodoPago: null,
-          fechaPago: null,
-          referenciaPago: null,
-          observaciones: `Solicitud IRC: ${empresa.nombreEmpresa} - ${empresa.categoriaIrc.nombre}`,
-          estadoId: estadoFacturaAbierta.id,
-          clienteId: clienteIdFinal,
-          cajaId: cajaAbierta.id
-        }
-      });
-
-      // 3. Crear item de factura
-      await tx.facturaItem.create({
-        data: {
-          facturaId: factura.id,
-          concepto: `${empresa.categoriaIrc.nombre} - ${empresa.categoriaIrc.codigo}`,
-          cantidad: 1,
-          precioUnitario: precioCategoria,
-          itbis,
-          subtotal,
-          total
-        }
-      });
-
-      // 4. Actualizar solicitud IRC con la factura
-      await tx.solicitudRegistroInspeccion.update({
-        where: { id: solicitud.id },
-        data: { facturaId: factura.id }
-      });
-
-      // 5. Crear formulario vinculado a la solicitud IRC y factura
-      const formulario = await tx.formulario.create({
+      // 2. Crear formulario vinculado a la solicitud IRC (sin factura aún)
+      await tx.formulario.create({
         data: {
           codigo: codigo,
           fecha: new Date(),
           usuarioId: (req as AuthRequest).usuario?.id || 1,
           estadoId: estadoFormulario.id,
           esProduccion: false,
-          solicitudIrcId: solicitud.id,
-          facturaId: factura.id
+          solicitudIrcId: solicitud.id
+          // facturaId: null - se asignará cuando se cobre en caja
         }
       });
 
-      // 6. Retornar solicitud con todas sus relaciones
+      // 3. Retornar solicitud con todas sus relaciones
       const solicitudCompleta = await tx.solicitudRegistroInspeccion.findUnique({
         where: { id: solicitud.id },
         include: {
@@ -1577,13 +1697,7 @@ export const crearFormularioIRC = asyncHandler(async (req: AuthRequest, res: Res
           },
           categoriaIrc: true,
           estado: true,
-          formulario: true,
-          factura: {
-            include: {
-              estado: true,
-              items: true
-            }
-          }
+          formulario: true
         }
       });
 

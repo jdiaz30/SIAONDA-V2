@@ -13,7 +13,7 @@ import {
   FiEye,
   FiSearch
 } from 'react-icons/fi';
-import { getObrasPendientes, asentarObra, asentarProduccion, devolverAAAU, Registro, ObraPendiente, ProduccionAgrupada } from '../../services/registroService';
+import { getObrasPendientes, asentarObra, asentarProduccion, devolverAAAU, devolverProduccionAAU, Registro, ObraPendiente, ProduccionAgrupada } from '../../services/registroService';
 import { getErrorMessage } from '../../utils/errorHandler';
 import ModalRevisionDetallada from '../../components/registro/ModalRevisionDetallada';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -65,6 +65,10 @@ const ObrasPendientesPage = () => {
   // Estado para modal de asentamiento de producción
   const [modalAsentarProduccion, setModalAsentarProduccion] = useState<ProduccionAgrupada | null>(null);
   const [obrasProduccionData, setObrasProduccionData] = useState<Array<{ registroId: number; libroNumero: string; hojaNumero: string }>>([]);
+
+  // Estado para modal de devolución de producción
+  const [modalDevolverProduccion, setModalDevolverProduccion] = useState<ProduccionAgrupada | null>(null);
+  const [comentarioDevolucionProduccion, setComentarioDevolucionProduccion] = useState('');
 
   // Estado para producciones expandidas/colapsadas
   const [produccionesExpandidas, setProduccionesExpandidas] = useState<Set<number>>(new Set());
@@ -131,6 +135,10 @@ const ObrasPendientesPage = () => {
     try {
       setProcesando(modalAsentar.id);
       await asentarObra(modalAsentar.id, libro, hoja, observaciones);
+
+      // Mensaje de éxito
+      alert(`EXITO: Obra asentada correctamente\n\nTítulo: ${modalAsentar.tituloObra}\nLibro: ${libro}\nHoja: ${hoja}`);
+
       setModalAsentar(null);
       setLibroNumero('');
       setHojaNumero('');
@@ -193,10 +201,13 @@ const ObrasPendientesPage = () => {
     try {
       setProcesando(modalAsentarProduccion.id);
       await asentarProduccion(modalAsentarProduccion.id, obrasParaAsentar, observaciones);
+      // Mensaje de éxito
+      const numObras = obrasParaAsentar.length;
+      alert(`EXITO: Producción asentada correctamente\n\nTítulo: ${modalAsentarProduccion.tituloProduccion}\nTipo: ${modalAsentarProduccion.tipoProducto}\nObras asentadas: ${numObras}`);
+
       setModalAsentarProduccion(null);
       setObrasProduccionData([]);
       setObservaciones('');
-      alert(`Producción "${modalAsentarProduccion.tituloProduccion}" asentada exitosamente con ${obrasParaAsentar.length} obras`);
       await cargarObras();
     } catch (error: any) {
       console.error('Error al asentar producción:', error);
@@ -355,6 +366,18 @@ const ObrasPendientesPage = () => {
                       <button
                         onClick={() => {
                           // Inicializar datos de obras
+                          console.log('🔍 DEBUG: Abriendo modal de producción');
+                          console.log('📦 Producción completa:', item);
+                          console.log('📚 Obras dentro de la producción:', item.obras);
+                          item.obras.forEach((obra, idx) => {
+                            console.log(`  Obra ${idx + 1}:`, {
+                              id: obra.id,
+                              titulo: obra.tituloObra,
+                              formularioProducto: obra.formularioProducto,
+                              archivos: obra.formularioProducto?.archivos
+                            });
+                          });
+
                           const initialData = item.obras.map(obra => ({
                             registroId: obra.id,
                             libroNumero: '',
@@ -555,7 +578,7 @@ const ObrasPendientesPage = () => {
                           {cliente.archivos.map((archivo) => (
                             <a
                               key={archivo.id}
-                              href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${archivo.ruta}`}
+                              href={`${window.location.protocol}//${window.location.host}/${archivo.ruta.startsWith('/') ? archivo.ruta.substring(1) : archivo.ruta}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
@@ -584,7 +607,7 @@ const ObrasPendientesPage = () => {
                           {obra.formularioProducto.archivos.map((archivo) => (
                             <a
                               key={archivo.id}
-                              href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${archivo.ruta}`}
+                              href={`${window.location.protocol}//${window.location.host}/${archivo.ruta.startsWith('/') ? archivo.ruta.substring(1) : archivo.ruta}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
@@ -831,6 +854,13 @@ const ObrasPendientesPage = () => {
                 const archivosCliente = clientes.flatMap(c => c.cliente.archivos || []);
                 const archivosObra = obra.formularioProducto.archivos || [];
 
+                // Debug: Ver qué archivos tiene esta obra
+                console.log(`Obra ${index + 1} (${tituloReal}):`, {
+                  formularioProductoId: obra.formularioProducto.id,
+                  archivosObra: archivosObra,
+                  cantidadArchivos: archivosObra.length
+                });
+
                 return (
                   <div key={obra.id} className="bg-white border-2 border-gray-300 rounded-lg overflow-hidden">
                     {/* Header compacto siempre visible */}
@@ -909,6 +939,34 @@ const ObrasPendientesPage = () => {
                               />
                             </div>
                           </div>
+
+                          {/* Archivos - Vista compacta siempre visible */}
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <p className="text-xs text-gray-600 font-medium mb-2">
+                              Soporte Material {archivosObra.length > 0 ? `(${archivosObra.length})` : ''}
+                            </p>
+                            {archivosObra.length > 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {archivosObra.map((archivo, idx) => (
+                                  <a
+                                    key={idx}
+                                    href={`${window.location.protocol}//${window.location.host}/${archivo.ruta.startsWith('/') ? archivo.ruta.substring(1) : archivo.ruta}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors text-xs text-blue-700 font-medium"
+                                  >
+                                    <FiFileText className="flex-shrink-0" />
+                                    {archivo.nombreOriginal || `Archivo ${idx + 1}`}
+                                  </a>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-flex items-center gap-1">
+                                <FiAlertCircle className="flex-shrink-0" />
+                                No se adjuntó soporte material al registrar esta obra
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -984,7 +1042,7 @@ const ObrasPendientesPage = () => {
                                   {archivosCliente.map((archivo, idx) => (
                                     <a
                                       key={idx}
-                                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${archivo.ruta}`}
+                                      href={`${window.location.protocol}//${window.location.host}/${archivo.ruta.startsWith('/') ? archivo.ruta.substring(1) : archivo.ruta}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded hover:border-purple-300 hover:bg-purple-50 transition-colors text-xs"
@@ -1011,7 +1069,7 @@ const ObrasPendientesPage = () => {
                                   {archivosObra.map((archivo, idx) => (
                                     <a
                                       key={idx}
-                                      href={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/${archivo.ruta}`}
+                                      href={`${window.location.protocol}//${window.location.host}/${archivo.ruta.startsWith('/') ? archivo.ruta.substring(1) : archivo.ruta}`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded hover:border-purple-300 hover:bg-purple-50 transition-colors text-xs"
@@ -1058,9 +1116,19 @@ const ObrasPendientesPage = () => {
                   setObrasProduccionData([]);
                   setObservaciones('');
                 }}
-                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                className="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
               >
                 Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setModalDevolverProduccion(modalAsentarProduccion);
+                }}
+                disabled={procesando === modalAsentarProduccion.id}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiAlertCircle />
+                Devolver a AAU
               </button>
               <button
                 onClick={handleAsentarProduccion}
@@ -1156,6 +1224,132 @@ const ObrasPendientesPage = () => {
                   <>
                     <FiAlertCircle />
                     Confirmar Devolución
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Devolución de Producción */}
+      {modalDevolverProduccion && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-red-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-100 p-2 rounded-full">
+                    <FiAlertCircle className="text-2xl text-red-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">Devolver Producción a AAU</h2>
+                    <p className="text-sm text-gray-600">La producción será devuelta para corrección</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setModalDevolverProduccion(null);
+                    setComentarioDevolucionProduccion('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 p-2"
+                >
+                  <FiX className="text-2xl" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4">
+              <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800 font-medium mb-2">
+                  ⚠️ Esta acción devolverá TODAS las obras de la producción a AAU
+                </p>
+                <p className="text-sm text-yellow-700">
+                  El funcionario de AAU podrá corregir los errores y reenviar la producción para asentamiento.
+                </p>
+                <p className="text-sm text-yellow-700 mt-2">
+                  El cliente NO tendrá que pagar nuevamente cuando se corrija.
+                </p>
+              </div>
+
+              <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                <p className="text-sm text-purple-600 mb-1">Producción</p>
+                <p className="font-bold text-purple-900 mb-3">{modalDevolverProduccion.tituloProduccion}</p>
+
+                <p className="text-sm text-purple-600 mb-1">Tipo</p>
+                <p className="font-medium text-purple-900 mb-3">{modalDevolverProduccion.tipoProducto}</p>
+
+                <p className="text-sm text-purple-600 mb-1">Cantidad de obras</p>
+                <p className="font-bold text-purple-900">{modalDevolverProduccion.obras.length} obras</p>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Motivo de la devolución <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={comentarioDevolucionProduccion}
+                  onChange={(e) => setComentarioDevolucionProduccion(e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="Explica detalladamente qué debe corregirse (ej: Faltan los archivos de soporte material de cada obra, revisar títulos incorrectos, etc.)"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Este comentario quedará registrado en el historial y será visible para el funcionario de AAU
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex gap-3">
+              <button
+                onClick={() => {
+                  setModalDevolverProduccion(null);
+                  setComentarioDevolucionProduccion('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!comentarioDevolucionProduccion.trim()) {
+                    alert('Debe ingresar un motivo de devolución');
+                    return;
+                  }
+
+                  try {
+                    setProcesando(modalDevolverProduccion.id);
+                    await devolverProduccionAAU(modalDevolverProduccion.id, comentarioDevolucionProduccion);
+                    alert(`✅ Producción "${modalDevolverProduccion.tituloProduccion}" devuelta a AAU exitosamente.\n\n📝 Comentario registrado en el historial.`);
+                    setModalDevolverProduccion(null);
+                    setModalAsentarProduccion(null);
+                    setComentarioDevolucionProduccion('');
+                    setObrasProduccionData([]);
+                    setObservaciones('');
+                    await cargarObras();
+                  } catch (error: any) {
+                    console.error('Error al devolver producción:', error);
+                    alert(`❌ Error: ${getErrorMessage(error)}`);
+                  } finally {
+                    setProcesando(null);
+                  }
+                }}
+                disabled={procesando === modalDevolverProduccion.id || !comentarioDevolucionProduccion.trim()}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {procesando === modalDevolverProduccion.id ? (
+                  <>
+                    <FiClock className="animate-spin" />
+                    Devolviendo...
+                  </>
+                ) : (
+                  <>
+                    <FiAlertCircle />
+                    Devolver a AAU
                   </>
                 )}
               </button>

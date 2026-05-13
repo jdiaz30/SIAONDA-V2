@@ -40,7 +40,7 @@ export const uploadCertificado = multer({
 
 // ============================================
 // DASHBOARD - Estadísticas y resumen
-// ============================================
+// ============================================ 
 export const getDashboard = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.usuario) {
     throw new AppError('No autenticado', 401);
@@ -579,42 +579,8 @@ export const crearRegistrosDesdeFormulario = asyncHandler(async (req: AuthReques
       c.campo.campo.toLowerCase().includes('nombre')
     );
 
-    // Buscar campo de subtipo - puede ser "tipo_obra" o "subcategoria" dependiendo del producto
-    const campoSubtipo = producto.campos.find(c =>
-      c.campo.campo === 'tipo_obra' || c.campo.campo === 'subcategoria'
-    );
-
-    // DEBUG: Ver todos los campos disponibles
-    console.log('🔍 DEBUG - Campos disponibles en producto:', producto.campos.map(c => ({
-      campo: c.campo.campo,
-      valor: c.valor
-    })));
-    console.log('🔍 DEBUG - Campo subtipo encontrado:', campoSubtipo ? {
-      campo: campoSubtipo.campo.campo,
-      valor: campoSubtipo.valor
-    } : 'NO ENCONTRADO');
-
     // Normalizar a mayúsculas para consistencia en certificados y búsquedas
     const tituloObra = (campoTitulo?.valor || 'Sin título').toUpperCase();
-    const subtipoObra = campoSubtipo?.valor ? campoSubtipo.valor.toUpperCase() : null;
-
-    console.log('🔍 DEBUG - subtipoObra final:', subtipoObra);
-
-    // Para tipoObra: usar categoría general en lugar del nombre del producto
-    const categoriaMap: Record<string, string> = {
-      'Literaria': 'OBRA LITERARIA',
-      'Musical': 'OBRA MUSICAL',
-      'Audiovisual': 'OBRA AUDIOVISUAL',
-      'Artes Visuales': 'OBRA DE ARTES VISUALES',
-      'Escénica': 'OBRA ESCÉNICA',
-      'Científica': 'OBRA CIENTÍFICA',
-      'Arte Aplicado': 'OBRA DE ARTE APLICADO',
-      'ACTOS_CONTRATOS': 'ACTO O CONTRATO',
-      'PRODUCCIONES': 'PRODUCCIÓN',
-      'Inspectoría': 'INSCRIPCIÓN IRC'
-    };
-
-    const tipoObraCategoria = categoriaMap[producto.producto.categoria] || producto.producto.categoria.toUpperCase();
     const numeroRegistro = await generarNumeroRegistro();
 
     const registro = await prisma.registro.create({
@@ -622,8 +588,7 @@ export const crearRegistrosDesdeFormulario = asyncHandler(async (req: AuthReques
         numeroRegistro,
         formularioProductoId: producto.id,
         fechaAsentamiento: new Date(),
-        tipoObra: tipoObraCategoria,
-        subtipoObra,
+        tipoObra: producto.producto.nombre.toUpperCase(),
         tituloObra,
         estadoId: estadoPendiente.id,
         usuarioAsentamientoId: req.usuario.id
@@ -704,48 +669,179 @@ export const getRegistros = asyncHandler(async (req: AuthRequest, res: Response)
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
   const take = parseInt(limit as string);
 
-  const [registros, total] = await Promise.all([
-    prisma.registro.findMany({
-      where,
-      skip,
-      take,
-      include: {
-        estado: true,
-        usuarioAsentamiento: {
-          select: {
-            nombrecompleto: true
-          }
-        },
-        formularioProducto: {
-          include: {
-            producto: true,
-            formulario: {
-              include: {
-                clientes: {
-                  include: {
-                    cliente: true
-                  }
+  // Obtener todos los registros
+  const registrosBrutos = await prisma.registro.findMany({
+    where,
+    include: {
+      estado: true,
+      usuarioAsentamiento: {
+        select: {
+          nombrecompleto: true
+        }
+      },
+      formularioProducto: {
+        include: {
+          producto: true,
+          formulario: {
+            include: {
+              clientes: {
+                include: {
+                  cliente: true
                 }
               }
             }
+          },
+          campos: {
+            include: {
+              campo: true
+            }
           }
         }
-      },
-      orderBy: { fechaAsentamiento: 'desc' }
-    }),
-    prisma.registro.count({ where })
-  ]);
+      }
+    },
+    orderBy: { fechaAsentamiento: 'desc' }
+  });
+
+  // Agrupar producciones (múltiples obras con mismo titulo_produccion)
+  const registrosAgrupados: any[] = [];
+  const produccionesProcesadas = new Set<string>();
+
+  for (const registro of registrosBrutos) {
+    // Buscar si tiene título de producción
+    const tituloProduccionCampo = registro.formularioProducto.campos.find(
+      c => c.campo.campo === 'titulo_produccion'
+    );
+
+    const tituloProduccion = tituloProduccionCampo?.valor?.trim();
+
+    // Si tiene título de producción, verificar si hay múltiples obras con ese título
+    if (tituloProduccion) {
+      // Si ya procesamos esta producción, skip
+      if (produccionesProcesadas.has(tituloProduccion)) {
+        continue;
+      }
+
+      // Buscar todas las obras con el mismo título de producción
+      const obrasDeProduccion = registrosBrutos.filter(r => {
+        const tituloProd = r.formularioProducto.campos.find(
+          c => c.campo.campo === 'titulo_produccion'
+        )?.valor?.trim();
+        return tituloProd === tituloProduccion;
+      });
+
+      // Si hay más de una obra con el mismo título de producción, es una producción
+      if (obrasDeProduccion.length > 1) {
+        registrosAgrupados.push({
+          ...registro,
+          esProduccion: true,
+          cantidadObras: obrasDeProduccion.length,
+          tituloProduccion: tituloProduccion
+        });
+        produccionesProcesadas.add(tituloProduccion);
+      } else {
+        // Solo una obra con ese título de producción = obra individual
+        registrosAgrupados.push({
+          ...registro,
+          esProduccion: false
+        });
+      }
+    } else {
+      // No tiene título de producción = obra individual
+      registrosAgrupados.push({
+        ...registro,
+        esProduccion: false
+      });
+    }
+  }
+
+  // Aplicar paginación a los registros agrupados
+  const totalAgrupados = registrosAgrupados.length;
+  const registrosPaginados = registrosAgrupados.slice(skip, skip + take);
+
+  // Log temporal para debug
+  console.log('📋 Registros agrupados (primeros 5):');
+  registrosPaginados.slice(0, 5).forEach(r => {
+    console.log(`  - ${r.numeroRegistro}: esProduccion=${r.esProduccion}, titulo=${r.tituloObra}`);
+  });
 
   res.json({
     success: true,
     data: {
-      registros,
+      registros: registrosPaginados,
       pagination: {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit as string))
+        total: totalAgrupados,
+        totalPages: Math.ceil(totalAgrupados / parseInt(limit as string))
       }
+    }
+  });
+});
+
+// ============================================
+// OBTENER TODAS LAS OBRAS DE UNA PRODUCCIÓN
+// ============================================
+export const getObrasProduccion = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.usuario) {
+    throw new AppError('No autenticado', 401);
+  }
+
+  const { tituloProduccion } = req.query;
+
+  if (!tituloProduccion) {
+    throw new AppError('Falta el parámetro tituloProduccion', 400);
+  }
+
+  // Buscar todas las obras con el mismo titulo_produccion
+  const registros = await prisma.registro.findMany({
+    include: {
+      estado: true,
+      usuarioAsentamiento: {
+        select: {
+          nombrecompleto: true
+        }
+      },
+      formularioProducto: {
+        include: {
+          producto: true,
+          formulario: {
+            include: {
+              clientes: {
+                include: {
+                  cliente: true
+                }
+              }
+            }
+          },
+          campos: {
+            include: {
+              campo: true
+            }
+          },
+          archivos: {
+            include: {
+              campo: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: { fechaAsentamiento: 'asc' }
+  });
+
+  // Filtrar las obras que tienen el titulo_produccion buscado
+  const obrasProduccion = registros.filter(r => {
+    const tituloProdCampo = r.formularioProducto.campos.find(
+      c => c.campo.campo === 'titulo_produccion'
+    );
+    return tituloProdCampo?.valor?.trim() === (tituloProduccion as string).trim();
+  });
+
+  res.json({
+    success: true,
+    data: {
+      obras: obrasProduccion,
+      total: obrasProduccion.length
     }
   });
 });
@@ -788,6 +884,11 @@ export const getRegistroDetalle = asyncHandler(async (req: AuthRequest, res: Res
             }
           },
           campos: {
+            include: {
+              campo: true
+            }
+          },
+          archivos: {
             include: {
               campo: true
             }
@@ -992,12 +1093,13 @@ export const generarCertificado = asyncHandler(async (req: AuthRequest, res: Res
         fechaAsentamiento: primerRegistro.fechaAsentamiento,
         libroNumero: primerRegistro.libroNumero,
         numeroRegistroPrimero: primerRegistro.numeroRegistro,
-        cliente: {
+        clientes: [{
           nombrecompleto: cliente.nombrecompleto,
           identificacion: cliente.identificacion,
           rnc: cliente.rnc,
-          direccion: cliente.direccion
-        },
+          direccion: cliente.direccion,
+          tipoRelacion: 'AUTOR'
+        }],
         obras: registrosProduccion.map(r => ({
           numeroRegistro: r.numeroRegistro,
           tituloObra: r.tituloObra
@@ -1017,14 +1119,17 @@ export const generarCertificado = asyncHandler(async (req: AuthRequest, res: Res
       numeroRegistro: registro.numeroRegistro,
       tituloObra: registro.tituloObra,
       tipoObra: registro.tipoObra,
-      subtipoObra: registro.subtipoObra,
       fechaAsentamiento: registro.fechaAsentamiento,
       libroNumero: registro.libroNumero,
       hojaNumero: registro.hojaNumero,
-      cliente: {
+      clientes: [{
         nombrecompleto: cliente.nombrecompleto,
-        identificacion: cliente.identificacion
-      },
+        identificacion: cliente.identificacion,
+        rnc: cliente.rnc,
+        direccion: cliente.direccion,
+        tipoRelacion: 'AUTOR',
+        esPrincipal: true
+      }],
       campos: registro.formularioProducto.campos
     };
 
@@ -1240,9 +1345,46 @@ export const enviarAAAU = asyncHandler(async (req: AuthRequest, res: Response) =
 
     // Actualizar formularios asociados a estado CERTIFICADO
     const formularioIds = [...new Set(registros.map(r => r.formularioProducto.formularioId))];
+
+    // Para cada formulario, verificar si es producción y obtener todos los relacionados
+    const todosLosFormularioIds = new Set<number>();
+
+    for (const formularioId of formularioIds) {
+      const formulario = await tx.formulario.findUnique({
+        where: { id: formularioId },
+        select: { id: true, esProduccion: true, produccionPadreId: true }
+      });
+
+      if (!formulario) continue;
+
+      const esProduccion = formulario.esProduccion || formulario.produccionPadreId !== null;
+
+      if (esProduccion) {
+        // Determinar el ID del formulario padre
+        const formularioPadreId = formulario.produccionPadreId || formulario.id;
+
+        // Obtener todos los formularios de la producción (padre + hijos)
+        const formulariosProd = await tx.formulario.findMany({
+          where: {
+            OR: [
+              { id: formularioPadreId },
+              { produccionPadreId: formularioPadreId }
+            ]
+          },
+          select: { id: true }
+        });
+
+        formulariosProd.forEach(f => todosLosFormularioIds.add(f.id));
+      } else {
+        // No es producción, solo agregar este formulario
+        todosLosFormularioIds.add(formularioId);
+      }
+    }
+
+    // Actualizar TODOS los formularios (incluyendo todos los de cada producción)
     await tx.formulario.updateMany({
       where: {
-        id: { in: formularioIds }
+        id: { in: Array.from(todosLosFormularioIds) }
       },
       data: {
         estadoId: estadoCertificado.id

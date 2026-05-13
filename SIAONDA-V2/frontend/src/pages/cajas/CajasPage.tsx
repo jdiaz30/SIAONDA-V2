@@ -5,6 +5,7 @@ import cajasService, { Caja } from '../../services/cajasService';
 import { usePermissions } from '../../hooks/usePermissions';
 import NoAccess from '../../components/common/NoAccess';
 import { getErrorMessage } from '../../utils/errorHandler';
+import { getFileUrl } from '../../services/api';
 
 const CajasPage = () => {
   const { canAccessModule } = usePermissions();
@@ -42,12 +43,12 @@ const CajasPage = () => {
   useEffect(() => {
     cargarCajaActiva();
 
-    // Actualizar contadores cada 10 segundos si hay caja activa
-    const interval = setInterval(() => {
-      cargarCajaActiva();
-    }, 10000); // 10 segundos
-
-    return () => clearInterval(interval);
+    // POLLING DESACTIVADO - Causaba pérdida de foco al escribir
+    // TODO: Implementar solución que no cause re-renders
+    // const interval = setInterval(() => {
+    //   cargarCajaActiva();
+    // }, 10000);
+    // return () => clearInterval(interval);
   }, []);
 
   const cargarCajaActiva = async () => {
@@ -110,7 +111,7 @@ const CajasPage = () => {
       alert('✅ Caja cerrada exitosamente\n\nSe abrirá el reporte de cierre para imprimir y entregar a Contabilidad.');
 
       // Abrir reporte de cierre en nueva pestaña
-      window.open(`http://localhost:3000/api/cajas/cierre/${cierreId}/imprimir`, '_blank');
+      window.open(getFileUrl(`/api/cajas/cierre/${cierreId}/imprimir`), '_blank');
 
       cargarCajaActiva();
     } catch (error: any) {
@@ -175,7 +176,7 @@ const CajasPage = () => {
 
       // Abrir factura en nueva pestaña
       const facturaId = response.factura.id;
-      window.open(`http://localhost:3000/api/facturas/${facturaId}/imprimir`, '_blank');
+      window.open(getFileUrl(`/api/facturas/${facturaId}/imprimir`), '_blank');
 
       // Limpiar formulario y cerrar modal
       setMostrarModalFacturaManual(false);

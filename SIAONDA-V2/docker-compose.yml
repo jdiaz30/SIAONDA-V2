@@ -1,0 +1,223 @@
+# =====================================================
+# SIAONDA V2 - Docker Compose Configuration
+# =====================================================
+# Versión de Docker Compose (3.8 es compatible con Docker 19.03+)
+version: '3.8'
+
+# =====================================================
+# SERVICIOS (Contenedores)
+# =====================================================
+services:
+  # ---------------------------------------------------
+  # 1. BASE DE DATOS: PostgreSQL 15
+  # ---------------------------------------------------
+  postgres:
+    # Usa imagen oficial de PostgreSQL versión 15 Alpine (ligera)
+    image: postgres:15-alpine
+
+    # Nombre del contenedor (más fácil de identificar)
+    container_name: siaonda-postgres
+
+    # Reinicia automáticamente si falla
+    restart: unless-stopped
+
+    # Variables de entorno para PostgreSQL
+    environment:
+      # Usuario administrador de PostgreSQL
+      POSTGRES_USER: postgres
+      # Contraseña del admin (cargada desde .env)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123}
+      # Nombre de la base de datos
+      POSTGRES_DB: siaonda
+      # Zona horaria
+      TZ: America/Santo_Domingo
+
+    # Puertos: [Puerto_Host:Puerto_Contenedor]
+    # 5432:5432 significa: puerto 5432 de tu PC → puerto 5432 del contenedor
+    ports:
+      - "5432:5432"
+
+    # Volúmenes: Persistencia de datos
+    volumes:
+      # postgres_data: Guarda los datos de la BD (no se pierden al reiniciar)
+      - postgres_data:/var/lib/postgresql/data
+      # Script de inicialización (se ejecuta solo la primera vez)
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+
+    # Health check: Verifica que PostgreSQL esté listo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    # Red interna para comunicación entre contenedores
+    networks:
+      - siaonda-network
+
+  # ---------------------------------------------------
+  # 2. BACKEND: Node.js + Express + Prisma
+  # ---------------------------------------------------
+  backend:
+    # Construye la imagen desde el Dockerfile del backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    container_name: siaonda-backend
+    restart: unless-stopped
+
+    # Depende de postgres: espera a que PostgreSQL esté listo
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      # URL de conexión a PostgreSQL
+      # Formato: postgresql://usuario:contraseña@host:puerto/base_datos
+      # "postgres" es el nombre del servicio (Docker lo resuelve automáticamente)
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres123}@postgres:5432/siaonda
+
+      # Puerto donde corre el backend
+      PORT: 3000
+
+      # Secreto para JWT (tokens de autenticación) - cargados desde .env
+      JWT_SECRET: ${JWT_SECRET:-tu-secreto-super-seguro-cambiar-en-produccion}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-tu-refresh-secret-super-seguro}
+      JWT_EXPIRES_IN: 8h
+      JWT_REFRESH_EXPIRES_IN: 7d
+
+      # Entorno de ejecución
+      NODE_ENV: production
+
+      # Prisma: Forzar uso de OpenSSL 3.x (Alpine usa OpenSSL 3)
+      PRISMA_ENGINES_MIRROR: https://binaries.prismaio.com
+      PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING: 1
+
+      # URL del frontend (para CORS)
+      FRONTEND_URL: ${FRONTEND_URL:-http://10.0.10.52}
+
+      # Zona horaria
+      TZ: America/Santo_Domingo
+
+    ports:
+      - "3000:3000"
+
+    volumes:
+      # Persiste archivos subidos (certificados, documentos, etc.)
+      - backend_uploads:/app/public/uploads
+      - backend_uploads_temp:/app/uploads/temp
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    networks:
+      - siaonda-network
+
+  # ---------------------------------------------------
+  # 3. FRONTEND: React + Vite + Nginx
+  # ---------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # Argumentos de build (variables disponibles durante la construcción)
+      args:
+        # URL de la API para el frontend (accesible desde la red)
+        VITE_API_URL: http://10.0.10.52:3000/api
+
+    container_name: siaonda-frontend
+    restart: unless-stopped
+
+    # Depende del backend
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    ports:
+      # Puerto 80 del contenedor → Puerto 80 de tu PC (HTTP)
+      - "80:80"
+
+    environment:
+      # URL de la API
+      VITE_API_URL: http://localhost:3000/api
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    networks:
+      - siaonda-network
+
+  # ---------------------------------------------------
+  # 4. PGADMIN: Interfaz web para gestionar PostgreSQL
+  # ---------------------------------------------------
+  pgadmin:
+    # Imagen oficial de PgAdmin 4
+    image: dpage/pgadmin4:latest
+
+    container_name: siaonda-pgadmin
+    restart: unless-stopped
+
+    environment:
+      # Email de login a PgAdmin
+      PGADMIN_DEFAULT_EMAIL: admin@siaonda.com
+      # Contraseña de login (cargada desde .env)
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      # Deshabilita modo servidor (más simple)
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      # Deshabilita autenticación maestra (más simple para desarrollo)
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+
+    ports:
+      # Accede a PgAdmin en: http://localhost:5050
+      - "5050:80"
+
+    volumes:
+      # Persiste configuración de PgAdmin
+      - pgadmin_data:/var/lib/pgadmin
+
+    depends_on:
+      - postgres
+
+    networks:
+      - siaonda-network
+
+# =====================================================
+# VOLÚMENES (Almacenamiento Persistente)
+# =====================================================
+volumes:
+  # Datos de PostgreSQL (tablas, índices, etc.)
+  postgres_data:
+    driver: local
+
+  # Archivos subidos por usuarios
+  backend_uploads:
+    driver: local
+
+  # Archivos temporales
+  backend_uploads_temp:
+    driver: local
+
+  # Configuración de PgAdmin
+  pgadmin_data:
+    driver: local
+
+# =====================================================
+# REDES (Comunicación entre contenedores)
+# =====================================================
+networks:
+  # Red bridge interna para que los contenedores se comuniquen
+  siaonda-network:
+    driver: bridge
+    # Configuración de red
+    ipam:
+      config:
+        # Subred para los contenedores
+        - subnet: 172.20.0.0/16

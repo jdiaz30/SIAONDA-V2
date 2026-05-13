@@ -122,3 +122,31 @@ coverage/
 # Archivos .md temporales creados durante desarrollo
 # docs/temp/
 # notas_privadas.md
+
+# ---------------------------------------------
+# Claude AI y Herramientas de Desarrollo
+# ---------------------------------------------
+.claude/
+.claude_history
+.aider*
+
+# ---------------------------------------------
+# Scripts de Mantenimiento (seguridad)
+# ---------------------------------------------
+.scripts-mantenimiento/
+backend/.scripts-mantenimiento/
+
+# ---------------------------------------------
+# Backups y Dumps
+# ---------------------------------------------
+*.dump
+*.sql.backup
+backups/
+*.backup.sql
+
+# ---------------------------------------------
+# Docker volumes y datos persistentes
+# ---------------------------------------------
+.docker/
+docker-data/
+postgres-data/

@@ -28,7 +28,7 @@ router.post('/', createFormulario);
 router.post('/obras', createFormularioObra); // Endpoint para obra individual
 router.post('/obras-multiple', createFormularioObrasMultiple); // Endpoint para carrito de obras
 router.put('/:id', updateFormulario);
-router.put('/:id/corregir', corregirFormulario); // Corregir formulario devuelto
+router.put('/:id/corregir', upload.any(), handleMulterError, corregirFormulario); // Corregir formulario devuelto
 router.post('/:id/asentar', asentarFormulario);
 router.delete('/:id', deleteFormulario);
 

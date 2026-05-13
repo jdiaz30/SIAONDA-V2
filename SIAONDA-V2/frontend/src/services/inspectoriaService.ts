@@ -2,12 +2,19 @@ import { api } from './api';
 
 // ==================== TIPOS ====================
 
+export interface SubcategoriaIRC {
+  codigo: string;
+  nombre: string;
+  precio: number;
+}
+
 export interface CategoriaIRC {
   id: number;
   codigo: string;
   nombre: string;
   descripcion?: string;
   precio: number;
+  subcategorias?: SubcategoriaIRC[] | null;
   activo: boolean;
 }
 
@@ -152,12 +159,24 @@ export interface SolicitudRegistro {
   estado?: EstadoSolicitud;
 }
 
+export interface ActaInspeccion {
+  id: number;
+  fechaVisita: Date | string;
+  horaVisita?: string;
+  cumplimiento: boolean;
+  hallazgos?: string;
+  infracciones?: string;
+  plazoCorreccion?: number;
+  fechaLimite?: Date | string;
+}
+
 export interface CasoInspeccion {
   id?: number;
   codigo?: string;
   empresaId: number;
   tipoCaso: 'OFICIO' | 'DENUNCIA' | 'OPERATIVO';
   origen?: string;
+  origenCaso?: string;
   descripcion?: string;
   estadoCasoId: number;
   encargadoId?: number;
@@ -169,12 +188,21 @@ export interface CasoInspeccion {
   fechaLimiteCorreccion?: Date | string;
   actaInspeccionId?: number;
   actaInfraccionId?: number;
+  actaInspeccion?: ActaInspeccion;
+  actaInfraccion?: ActaInspeccion;
   fechaCierre?: Date | string;
   resolucion?: string;
   motivoCierre?: string;
   statusId?: number;
   estadoJuridicoId?: number;
   observaciones?: string;
+  creadoEn?: Date | string;
+  // Campos de denunciante (solo para tipoCaso = DENUNCIA)
+  denuncianteNombre?: string;
+  denuncianteTelefono?: string;
+  denuncianteEmail?: string;
+  detallesDenuncia?: string;
+  // Relaciones
   empresa?: EmpresaInspeccionada;
   estadoCaso?: EstadoCaso;
 }
@@ -370,7 +398,7 @@ export const crearCaso = async (caso: Partial<CasoInspeccion>): Promise<CasoInsp
 };
 
 export const asignarInspector = async (id: number, inspectorId: number): Promise<CasoInspeccion> => {
-  const response = await api.post(`/inspectoria/casos/${id}/asignar-inspector`, { inspectorId });
+  const response = await api.put(`/inspectoria/casos/${id}/asignar`, { inspectorId });
   return response.data.data;
 };
 

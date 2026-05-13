@@ -299,7 +299,10 @@ const FormulariosListPage = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       {/* Solo Ver Detalles */}
                       <Link
-                        to={`/formularios/${formulario.id}`}
+                        to={formulario.solicitudIrc
+                          ? `/inspectoria/solicitudes/${formulario.solicitudIrc.id}`
+                          : `/formularios/${formulario.id}`
+                        }
                         className="text-blue-600 hover:text-blue-900 font-medium"
                       >
                         Ver Detalles

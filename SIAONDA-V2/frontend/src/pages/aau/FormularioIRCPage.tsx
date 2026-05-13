@@ -28,6 +28,11 @@ export default function FormularioIRCPage() {
   const [buscandoEmpresa, setBuscandoEmpresa] = useState(false);
   const [empresaEncontrada, setEmpresaEncontrada] = useState<any>(null);
 
+  // Subcategorías IRC y años de vigencia
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<any>(null);
+  const [subcategoriaSeleccionada, setSubcategoriaSeleccionada] = useState<string>('');
+  const [anosVigencia, setAnosVigencia] = useState<number>(1);
+
   // Datos adicionales
   const [datosAdicionales, setDatosAdicionales] = useState({
     tipoNegocio: '',
@@ -78,6 +83,7 @@ export default function FormularioIRCPage() {
   });
 
   const [documentos, setDocumentos] = useState<File[]>([]);
+  const [documentosExistentes, setDocumentosExistentes] = useState<any[]>([]);
 
   useEffect(() => {
     cargarCatalogos();
@@ -122,6 +128,17 @@ export default function FormularioIRCPage() {
         const empresa = empresas[0];
         setEmpresaEncontrada(empresa);
 
+        // Parsear datos adicionales desde comentario/observaciones si existen
+        let datosAdicionalesParsed: any = {};
+        try {
+          if (empresa.comentario) {
+            const parsed = JSON.parse(empresa.comentario);
+            datosAdicionalesParsed = parsed.datosAdicionales || {};
+          }
+        } catch (e) {
+          console.log('No se pudieron parsear los datos adicionales');
+        }
+
         // Pre-llenar formulario con datos existentes
         setFormData({
           ...formData,
@@ -135,14 +152,33 @@ export default function FormularioIRCPage() {
           descripcionActividades: empresa.descripcionActividades,
           direccion: empresa.direccion,
           provinciaId: empresa.provinciaId,
-          sector: empresa.sector || '',
+          sector: datosAdicionalesParsed.sector || '',
           telefono: empresa.telefono,
+          telefonoSecundario: datosAdicionalesParsed.telefonoSecundario || '',
           correoElectronico: empresa.email || '',
+          paginaWeb: empresa.paginaWeb || '',
+          cantidadEmpleados: datosAdicionalesParsed.cantidadEmpleados || 0,
+          fechaConstitucion: empresa.fechaRegistro ? new Date(empresa.fechaRegistro).toISOString().split('T')[0] : '',
+          observaciones: empresa.comentario || '',
           consejoAdministracion: empresa.consejoAdministracion || [],
           principalesClientes: empresa.principalesClientes || []
         });
 
-        alert(`✅ Empresa encontrada: ${empresa.nombreEmpresa}\n\nPuede actualizar la información si es necesario y proceder con la renovación.`);
+        // Cargar datos adicionales
+        setDatosAdicionales({
+          tipoNegocio: datosAdicionalesParsed.tipoNegocio || '',
+          celular: datosAdicionalesParsed.celular || '',
+          fechaInicioOperaciones: datosAdicionalesParsed.fechaInicioOperaciones || '',
+          nombreAdministrador: datosAdicionalesParsed.nombreAdministrador || '',
+          cedulaAdministrador: datosAdicionalesParsed.cedulaAdministrador || '',
+          telefonoAdministrador: datosAdicionalesParsed.telefonoAdministrador || '',
+          fechaInicioActividades: datosAdicionalesParsed.fechaInicioActividades || ''
+        });
+
+        // Cargar documentos existentes
+        setDocumentosExistentes(empresa.documentos || []);
+
+        alert(`✅ Empresa encontrada: ${empresa.nombreEmpresa}\n\nPuede actualizar la información si es necesario y proceder con la renovación.\n\n📄 Documentos cargados: ${empresa.documentos?.length || 0}`);
       } else {
         setError('No se encontró ninguna empresa con ese RNC/Cédula. Verifique el número o realice un Registro Nuevo.');
       }
@@ -163,6 +199,33 @@ export default function FormularioIRCPage() {
     } else {
       setFormData({ ...formData, [name]: value });
     }
+  };
+
+  const handleCategoriaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const categoriaId = parseInt(e.target.value);
+    setFormData({ ...formData, categoriaIrcId: categoriaId });
+
+    // Buscar la categoría seleccionada
+    const categoria = catalogos?.categoriasIRC.find(c => c.id === categoriaId);
+    setCategoriaSeleccionada(categoria);
+    setSubcategoriaSeleccionada(''); // Reset subcategoría
+  };
+
+  const calcularPrecioTotal = (): number => {
+    if (!categoriaSeleccionada) return 0;
+
+    let precioBase = categoriaSeleccionada.precio;
+
+    // Si tiene subcategorías, usar el precio de la subcategoría seleccionada
+    if (categoriaSeleccionada.subcategorias && subcategoriaSeleccionada) {
+      const subcat = categoriaSeleccionada.subcategorias.find((s: any) => s.codigo === subcategoriaSeleccionada);
+      if (subcat) {
+        precioBase = subcat.precio;
+      }
+    }
+
+    // Multiplicar por años de vigencia
+    return precioBase * anosVigencia;
   };
 
   const agregarMiembroConsejo = () => {
@@ -216,6 +279,12 @@ export default function FormularioIRCPage() {
       return;
     }
 
+    // Validar subcategoría si es necesaria
+    if (categoriaSeleccionada?.subcategorias && categoriaSeleccionada.subcategorias.length > 0 && !subcategoriaSeleccionada) {
+      setError('Debe seleccionar una subcategoría para esta categoría IRC');
+      return;
+    }
+
     if (formData.tipoPersona === 'MORAL' && formData.consejoAdministracion.length === 0) {
       setError('Las Personas Morales deben tener al menos un miembro del Consejo de Administración');
       return;
@@ -227,9 +296,15 @@ export default function FormularioIRCPage() {
         return;
       }
       if (!validarCedula(formData.cedulaPropietario)) {
-        setError('La cédula debe tener 11 dígitos (con o sin guiones)');
+        setError('La cédula del propietario debe tener 11 dígitos (con o sin guiones)');
         return;
       }
+    }
+
+    // Validar cédula del administrador si existe
+    if (datosAdicionales.cedulaAdministrador && !validarCedula(datosAdicionales.cedulaAdministrador)) {
+      setError('La cédula del administrador debe tener 11 dígitos (con o sin guiones)');
+      return;
     }
 
     try {
@@ -243,7 +318,10 @@ export default function FormularioIRCPage() {
 
       // Preparar FormData para enviar archivos
       const formDataToSend = new FormData();
-      formDataToSend.append('tipoSolicitud', tipoSolicitud);
+      formDataToSend.append('tipoSolicitud', tipoSolicitud || '');
+      formDataToSend.append('subcategoriaIrc', subcategoriaSeleccionada || '');
+      formDataToSend.append('anosVigencia', anosVigencia.toString());
+      formDataToSend.append('montoTotal', calcularPrecioTotal().toString());
 
       if (empresaEncontrada) {
         formDataToSend.append('empresaId', empresaEncontrada.id.toString());
@@ -544,18 +622,72 @@ export default function FormularioIRCPage() {
               <select
                 name="categoriaIrcId"
                 value={formData.categoriaIrcId}
-                onChange={handleChange}
+                onChange={handleCategoriaChange}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Seleccione una categoría</option>
                 {catalogos.categoriasIRC.map((cat) => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.codigo} - {cat.nombre} (RD$ {cat.precio.toLocaleString()})
+                    {cat.codigo} - {cat.nombre} {!cat.subcategorias && `(RD$ ${cat.precio.toLocaleString()})`}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Selector de Subcategoría (solo si la categoría tiene subcategorías) */}
+            {categoriaSeleccionada?.subcategorias && categoriaSeleccionada.subcategorias.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subcategoría / Tamaño <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={subcategoriaSeleccionada}
+                  onChange={(e) => setSubcategoriaSeleccionada(e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Seleccione una opción</option>
+                  {categoriaSeleccionada.subcategorias.map((subcat: any) => (
+                    <option key={subcat.codigo} value={subcat.codigo}>
+                      {subcat.nombre} (RD$ {subcat.precio.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {categoriaSeleccionada.codigo === 'IRC-09' ? 'Categoría según tamaño de estación' : 'Seleccione según tamaño de empresa'}
+                </p>
+              </div>
+            )}
+
+            {/* Selector de Años de Vigencia */}
+            {formData.categoriaIrcId > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Años de Vigencia <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={anosVigencia}
+                  onChange={(e) => setAnosVigencia(parseInt(e.target.value))}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="1">1 año</option>
+                  <option value="2">2 años</option>
+                  <option value="3">3 años</option>
+                  <option value="4">4 años</option>
+                  <option value="5">5 años</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Seleccione la cantidad de años que la empresa desea registrar
+                </p>
+                {anosVigencia > 0 && categoriaSeleccionada && (
+                  <p className="text-sm font-semibold text-blue-600 mt-2">
+                    💰 Total a pagar: RD$ {calcularPrecioTotal().toLocaleString()}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -631,9 +763,17 @@ export default function FormularioIRCPage() {
                   onChange={handleChange}
                   placeholder="Ej: 40200588933 o 402-0058893-3"
                   required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${
+                    formData.cedulaPropietario && !validarCedula(formData.cedulaPropietario)
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:ring-blue-500'
+                  }`}
                 />
-                <p className="text-xs text-gray-500 mt-1">11 digitos (con o sin guiones)</p>
+                {formData.cedulaPropietario && !validarCedula(formData.cedulaPropietario) ? (
+                  <p className="text-xs text-red-600 mt-1">La cédula debe tener 11 dígitos (con o sin guiones)</p>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">11 dígitos (con o sin guiones)</p>
+                )}
               </div>
 
               <div>
@@ -676,8 +816,15 @@ export default function FormularioIRCPage() {
                   value={datosAdicionales.cedulaAdministrador}
                   onChange={(e) => setDatosAdicionales({ ...datosAdicionales, cedulaAdministrador: e.target.value })}
                   placeholder="XXX-XXXXXXX-X"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:border-transparent ${
+                    datosAdicionales.cedulaAdministrador && !validarCedula(datosAdicionales.cedulaAdministrador)
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-gray-300 focus:ring-blue-500'
+                  }`}
                 />
+                {datosAdicionales.cedulaAdministrador && !validarCedula(datosAdicionales.cedulaAdministrador) && (
+                  <p className="text-xs text-red-600 mt-1">11 dígitos (con o sin guiones)</p>
+                )}
               </div>
 
               <div>
@@ -1037,9 +1184,57 @@ export default function FormularioIRCPage() {
             </ul>
           </div>
 
+          {/* Documentos existentes (solo en renovación) */}
+          {documentosExistentes.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-md font-semibold text-gray-800 mb-3">📎 Documentos Cargados Previamente</h3>
+              <div className="space-y-2">
+                {documentosExistentes.map((doc: any, index: number) => (
+                  <div key={doc.id || index} className="flex items-center justify-between bg-green-50 border border-green-200 p-3 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{doc.nombreArchivo}</p>
+                        <p className="text-xs text-gray-500">
+                          {doc.tipoDocumento} • {(doc.tamano / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={`http://10.0.10.52:3000${doc.rutaArchivo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-sm underline"
+                      >
+                        Ver
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`¿Desea eliminar el documento "${doc.nombreArchivo}"?`)) {
+                            setDocumentosExistentes(docs => docs.filter(d => d.id !== doc.id));
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                💡 Puede eliminar documentos antiguos y/o agregar nuevos documentos abajo.
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Seleccionar archivos (PDF, JPG, PNG)
+              {documentosExistentes.length > 0 ? 'Agregar Nuevos Archivos (PDF, JPG, PNG)' : 'Seleccionar archivos (PDF, JPG, PNG)'}
             </label>
             <input
               type="file"

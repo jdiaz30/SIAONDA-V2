@@ -294,13 +294,19 @@ const DashboardRegistroPage = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900">{registro.tituloObra}</div>
+                        <div className="text-sm text-gray-900">
+                          {(registro as any).esProduccion
+                            ? ((registro as any).tituloProduccion || registro.tituloObra)
+                            : registro.tituloObra}
+                        </div>
                         <div className="text-xs text-gray-500">
                           {registro.formularioProducto.formulario.clientes[0]?.cliente.nombrecompleto}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="text-sm text-gray-900">{registro.tipoObra}</span>
+                        <span className="text-sm text-gray-900">
+                          {(registro as any).esProduccion ? 'PRODUCCIÓN' : registro.tipoObra}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span

@@ -26,16 +26,22 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
     ? { sucursalId: cajaActiva.sucursalId }
     : {};
 
-  // 1. Solicitudes IRC pendientes de pago (PENDIENTE_PAGO)
+  // 1. Solicitudes IRC pendientes de pago (estado PENDIENTE sin factura)
   const solicitudesIrc = await prisma.solicitudRegistroInspeccion.findMany({
     where: {
       estado: {
-        nombre: 'PENDIENTE_PAGO'
-      }
+        nombre: 'PENDIENTE'
+      },
+      facturaId: null // Solo las que NO tienen factura aún
     },
     include: {
       estado: true,
-      empresa: true
+      empresa: {
+        include: {
+          categoriaIrc: true
+        }
+      },
+      categoriaIrc: true
     },
     orderBy: { fechaRecepcion: 'desc' }
   });
@@ -53,7 +59,7 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
     orderBy: { creadoEn: 'desc' }
   });
 
-  // 3. Formularios pendientes de pago
+  // 3. Formularios pendientes de pago (EXCLUIR IRC porque ya están en solicitudesIrc)
   // Incluir: formularios sin factura O formularios con factura en estado Abierta
   const formularios = await prisma.formulario.findMany({
     where: {
@@ -77,6 +83,7 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
           }
         }
       ],
+      solicitudIrcId: null, // EXCLUIR formularios IRC (ya están en solicitudesIrc)
       produccionPadreId: null, // Excluir obras hijas de producciones
       ...filtroSucursal // Filtrar por sucursal de la caja activa
     },
@@ -111,19 +118,45 @@ export const getCobrosPendientes = asyncHandler(async (req: AuthRequest, res: Re
 
   // Formatear respuesta unificada
   const cobrosPendientes = [
-    ...solicitudesIrc.map(sol => ({
-      id: sol.id,
-      tipo: 'IRC',
-      subtipo: sol.tipoSolicitud, // REGISTRO_NUEVO o RENOVACION
-      codigo: sol.codigo,
-      fecha: sol.fechaRecepcion,
-      descripcion: `${sol.tipoSolicitud} - ${sol.empresa?.nombreEmpresa || sol.nombreEmpresa || 'Sin empresa'}`,
-      monto: sol.tipoSolicitud === 'REGISTRO_NUEVO' ? 5000 : 3000, // Precios según tipo
-      cliente: sol.empresa?.nombreEmpresa || sol.nombreEmpresa || 'Sin empresa',
-      rnc: sol.rnc,
-      estado: sol.estado.nombre,
-      data: sol
-    })),
+    ...solicitudesIrc.map(sol => {
+      // Calcular monto basado en categoría IRC, subcategoría y años de vigencia
+      const categoriaIrc = sol.categoriaIrc || sol.empresa?.categoriaIrc;
+      let precioBase = categoriaIrc ? Number(categoriaIrc.precio) : 0;
+
+      // Si hay subcategoría en observaciones, buscar su precio
+      if (sol.observaciones && sol.observaciones.includes('Subcategoría:')) {
+        const match = sol.observaciones.match(/Subcategoría:\s*(\w+)/);
+        if (match && categoriaIrc?.subcategorias) {
+          const codigoSubcategoria = match[1];
+          const subcategorias = categoriaIrc.subcategorias as any;
+          if (Array.isArray(subcategorias)) {
+            const subcategoria = subcategorias.find((s: any) => s.codigo === codigoSubcategoria);
+            if (subcategoria && subcategoria.precio) {
+              precioBase = Number(subcategoria.precio);
+            }
+          }
+        }
+      }
+
+      const anosVigencia = sol.anosVigencia || 1;
+      const monto = precioBase * anosVigencia;
+
+      return {
+        id: sol.id,
+        tipo: 'IRC',
+        subtipo: sol.tipoSolicitud,
+        codigo: sol.codigo,
+        fecha: sol.fechaRecepcion,
+        descripcion: `${sol.tipoSolicitud} - ${sol.empresa?.nombreEmpresa || sol.nombreEmpresa || 'Sin empresa'} (${anosVigencia} ${anosVigencia === 1 ? 'año' : 'años'})`,
+        monto: monto,
+        cliente: sol.empresa?.nombreEmpresa || sol.nombreEmpresa || 'Sin empresa',
+        rnc: sol.rnc,
+        estado: sol.estado.nombre,
+        categoriaIrc: categoriaIrc?.nombre || 'Sin categoría',
+        anosVigencia: anosVigencia,
+        data: sol
+      };
+    }),
     ...denuncias.map(den => ({
       id: den.id,
       tipo: 'DENUNCIA',
@@ -357,46 +390,81 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
   // Procesar según tipo
   switch (tipo) {
     case 'IRC': {
-      // itemId es el ID del formulario, no de la solicitud
-      const formulario = await prisma.formulario.findUnique({
+      // itemId es el ID de la solicitud IRC (NO del formulario)
+      const solicitud = await prisma.solicitudRegistroInspeccion.findUnique({
         where: { id: itemId },
         include: {
-          solicitudIrc: {
+          empresa: {
             include: {
-              empresa: true,
-              estado: true,
               categoriaIrc: true
             }
           },
-          factura: {
-            include: {
-              items: true,
-              estado: true
-            }
-          }
+          estado: true,
+          categoriaIrc: true,
+          factura: true
         }
       });
 
-      if (!formulario || !formulario.solicitudIrc) {
-        throw new AppError('Formulario IRC no encontrado', 404);
+      if (!solicitud) {
+        throw new AppError('Solicitud IRC no encontrada', 404);
       }
 
-      const solicitud = formulario.solicitudIrc;
-
-      // La factura ya existe, fue creada al enviar a caja
-      if (!formulario.factura) {
-        throw new AppError('Factura no encontrada para esta solicitud IRC', 404);
+      // Verificar que no tenga factura ya (no debe haber sido cobrada)
+      if (solicitud.factura) {
+        throw new AppError('Esta solicitud IRC ya fue cobrada', 400);
       }
 
-      factura = formulario.factura;
+      // Calcular monto con subcategorías
+      const categoriaIrc = solicitud.categoriaIrc || solicitud.empresa?.categoriaIrc;
+      let precioBase = categoriaIrc ? Number(categoriaIrc.precio) : 0;
 
-      // Verificar que la factura esté en estado Abierta
-      if (factura.estado.nombre !== 'Abierta') {
-        throw new AppError('Esta factura ya fue procesada', 400);
+      // Si hay subcategoría en observaciones, buscar su precio
+      if (solicitud.observaciones && solicitud.observaciones.includes('Subcategoría:')) {
+        const match = solicitud.observaciones.match(/Subcategoría:\s*(\w+)/);
+        if (match && categoriaIrc?.subcategorias) {
+          const codigoSubcategoria = match[1];
+          const subcategorias = categoriaIrc.subcategorias as any;
+          if (Array.isArray(subcategorias)) {
+            const subcategoria = subcategorias.find((s: any) => s.codigo === codigoSubcategoria);
+            if (subcategoria && subcategoria.precio) {
+              precioBase = Number(subcategoria.precio);
+            }
+          }
+        }
       }
 
-      monto = Number(factura.total);
+      const anosVigencia = solicitud.anosVigencia || 1;
+      monto = precioBase * anosVigencia;
       concepto = `Solicitud IRC ${solicitud.codigo} - ${solicitud.tipoSolicitud}`;
+
+      // Obtener o crear cliente para la factura
+      let clienteId: number;
+      const clienteExistente = await prisma.cliente.findFirst({
+        where: {
+          OR: [
+            { rnc: solicitud.rnc },
+            { identificacion: solicitud.rnc }
+          ]
+        }
+      });
+
+      if (clienteExistente) {
+        clienteId = clienteExistente.id;
+      } else {
+        // Crear cliente si no existe
+        const nuevoCliente = await prisma.cliente.create({
+          data: {
+            codigo: `CLI-${Date.now()}`,
+            identificacion: solicitud.rnc || `ID-${Date.now()}`,
+            nombrecompleto: solicitud.nombreEmpresa || 'Sin nombre',
+            nombre: solicitud.nombreEmpresa || 'Sin nombre',
+            rnc: solicitud.rnc,
+            tipoId: 3, // Empresa
+            nacionalidadId: 1 // Dominicana
+          }
+        });
+        clienteId = nuevoCliente.id;
+      }
 
       // Obtener estado "Pagada" de facturas
       const estadoPagada = await prisma.facturaEstado.findFirst({
@@ -407,23 +475,43 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
         throw new AppError('Estado Pagada no encontrado', 500);
       }
 
-      // Actualizar la factura existente con los datos de pago
-      factura = await prisma.factura.update({
-        where: { id: factura.id },
+      // CREAR la factura ahora (no existía antes)
+      const subtotal = monto;
+      const itbis = 0; // IRC no lleva ITBIS
+
+      factura = await prisma.factura.create({
         data: {
-          estadoId: estadoPagada.id,
-          metodoPago,
-          referenciaPago: referenciaPago || null,
+          codigo,
           ncf,
           rnc: rnc || null,
-          fechaPago: new Date(),
+          fecha: new Date(),
+          subtotal,
+          itbis,
+          descuento: 0,
+          total: monto,
           pagado: monto,
-          observaciones: observaciones || factura.observaciones
+          metodoPago,
+          fechaPago: new Date(),
+          referenciaPago: referenciaPago || null,
+          observaciones: observaciones || `Solicitud IRC: ${solicitud.nombreEmpresa}`,
+          estadoId: estadoPagada.id,
+          clienteId: clienteId,
+          cajaId: cajaActiva.id,
+          items: {
+            create: [{
+              concepto: `${categoriaIrc?.nombre || 'IRC'} - ${anosVigencia} ${anosVigencia === 1 ? 'año' : 'años'}`,
+              cantidad: 1,
+              precioUnitario: precioBase,
+              itbis: 0,
+              subtotal,
+              total: monto
+            }]
+          }
         },
         include: { items: true, estado: true }
       });
 
-      // Actualizar estado de la solicitud IRC a PAGADA
+      // Actualizar estado de la solicitud IRC a PAGADA y vincular factura
       const estadoSolicitudPagada = await prisma.estadoSolicitudInspeccion.findFirst({
         where: { nombre: 'PAGADA' }
       });
@@ -436,20 +524,30 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
         where: { id: solicitud.id },
         data: {
           estadoId: estadoSolicitudPagada.id,
-          fechaPago: new Date()
+          fechaPago: new Date(),
+          facturaId: factura.id // Vincular la factura creada
         }
       });
 
-      // Actualizar estado del formulario a PAGADO
-      const estadoFormularioPagado = await prisma.formularioEstado.findFirst({
-        where: { nombre: 'PAGADO' }
+      // Actualizar estado del formulario a PAGADO (si existe)
+      const formulario = await prisma.formulario.findFirst({
+        where: { solicitudIrcId: solicitud.id }
       });
 
-      if (estadoFormularioPagado) {
-        await prisma.formulario.update({
-          where: { id: formulario.id },
-          data: { estadoId: estadoFormularioPagado.id }
+      if (formulario) {
+        const estadoFormularioPagado = await prisma.formularioEstado.findFirst({
+          where: { nombre: 'PAGADO' }
         });
+
+        if (estadoFormularioPagado) {
+          await prisma.formulario.update({
+            where: { id: formulario.id },
+            data: {
+              estadoId: estadoFormularioPagado.id,
+              facturaId: factura.id // Vincular también al formulario
+            }
+          });
+        }
       }
 
       break;
@@ -484,7 +582,16 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
       console.log('Creando factura para denuncia...');
       console.log('Datos:', { codigo, monto, concepto, cajaId: cajaActiva.id });
 
-      // Crear factura
+      // Obtener estado Pagada para la factura
+      const estadoFacturaPagada = await prisma.facturaEstado.findFirst({
+        where: { nombre: 'Pagada' }
+      });
+
+      if (!estadoFacturaPagada) {
+        throw new AppError('Estado Pagada no encontrado', 500);
+      }
+
+      // Crear factura directamente como PAGADA
       factura = await prisma.factura.create({
         data: {
           codigo,
@@ -492,7 +599,9 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
           total: monto,
           itbis: 0,
           subtotal: monto,
-          estadoId: estadoAbierta.id,
+          pagado: monto,
+          fechaPago: new Date(),
+          estadoId: estadoFacturaPagada.id,
           metodoPago,
           referenciaPago: referenciaPago || null,
           ncf,
@@ -515,18 +624,26 @@ export const procesarCobro = asyncHandler(async (req: AuthRequest, res: Response
         include: { items: true, estado: true }
       });
 
+      console.log('Factura creada:', factura.codigo, 'Estado:', factura.estado.nombre);
+
       // Actualizar denuncia a PAGADA
-      const estadoPagada = await prisma.estadoDenuncia.findFirst({
+      const estadoDenunciaPagada = await prisma.estadoDenuncia.findFirst({
         where: { nombre: 'PAGADA' }
       });
+
+      if (!estadoDenunciaPagada) {
+        throw new AppError('Estado PAGADA de denuncia no encontrado', 500);
+      }
 
       await prisma.denuncia.update({
         where: { id: itemId },
         data: {
-          estadoDenunciaId: estadoPagada!.id,
+          estadoDenunciaId: estadoDenunciaPagada.id,
           facturaId: factura.id
         }
       });
+
+      console.log('Denuncia actualizada a PAGADA');
 
       break;
     }

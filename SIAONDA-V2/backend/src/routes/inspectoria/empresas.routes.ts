@@ -6,7 +6,8 @@ import {
   buscarPorRNC,
   actualizarEmpresa,
   obtenerEmpresasVencidas,
-  obtenerEmpresasPorVencer
+  obtenerEmpresasPorVencer,
+  registrarEmpresaVigente
 } from '../../controllers/inspectoria/empresas.controller';
 
 const router = Router();
@@ -25,6 +26,9 @@ router.use(noCacheMiddleware);
 router.get('/vencidas', obtenerEmpresasVencidas);
 router.get('/por-vencer', obtenerEmpresasPorVencer);
 router.get('/buscar/rnc/:rnc', buscarPorRNC);
+
+// Registrar empresa ya vigente (migración manual)
+router.post('/vigente', registrarEmpresaVigente);
 
 // CRUD básico
 router.post('/', crearEmpresa);

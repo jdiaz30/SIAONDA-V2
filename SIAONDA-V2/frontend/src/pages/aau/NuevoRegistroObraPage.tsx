@@ -12,11 +12,25 @@ import { getErrorMessage } from '../../utils/errorHandler';
 import { usePermissions } from '../../hooks/usePermissions';
 import NoAccess from '../../components/common/NoAccess';
 
+// Polyfill para crypto.randomUUID en navegadores que no lo soportan
+const generateUUID = (): string => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback UUID v4 implementation
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 interface AutorSeleccionado {
   id: number;
   cliente: any;
   rol: string;
   orden: number;
+  esPrincipal: boolean;
 }
 
 interface ProductoSeleccionado {
@@ -132,7 +146,7 @@ const NuevoRegistroObraPage = () => {
     } else {
       // Agregar nueva obra al carrito
       const nuevaObra: ObraEnCarrito = {
-        id: crypto.randomUUID(), // Generar ID único temporal
+        id: generateUUID(), // Generar ID único temporal
         producto: productoSeleccionado!,
         datosFormulario: datos
       };
@@ -194,7 +208,8 @@ const NuevoRegistroObraPage = () => {
           productoId: productoSeleccionado!.id,
           clientes: autoresSeleccionados.map(a => ({
             clienteId: a.cliente.id,
-            tipoRelacion: a.rol
+            tipoRelacion: a.rol,
+            esPrincipal: a.esPrincipal
           })),
           obras: obrasEnCarrito.map((obra, index) => {
             // DEBUG: Ver QUÉ HAY en camposEspecificos
@@ -327,7 +342,8 @@ const NuevoRegistroObraPage = () => {
         // ========== FLUJO NORMAL (sin producción) ==========
         const autores = autoresSeleccionados.map(a => ({
           clienteId: a.cliente.id,
-          rol: a.rol
+          rol: a.rol,
+          esPrincipal: a.esPrincipal
         }));
 
         const obras = obrasEnCarrito.map(obra => ({

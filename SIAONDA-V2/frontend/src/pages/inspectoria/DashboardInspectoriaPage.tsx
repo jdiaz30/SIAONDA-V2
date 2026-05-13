@@ -106,17 +106,34 @@ export default function DashboardInspectoriaPage() {
           </Link>
 
           <Link
-            to="/aau/denuncias"
+            to="/inspectoria/inspecciones-parte"
             className="bg-orange-50 border border-orange-200 rounded-lg p-4 hover:bg-orange-100 transition-colors group"
           >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-800">Inspecciones de Parte</p>
-                <p className="text-xs text-orange-600 mt-1">Denuncias ciudadanas (RD$3,000)</p>
+                <p className="text-xs text-orange-600 mt-1">Ver todos los casos generados</p>
               </div>
               <div className="text-orange-300 group-hover:text-orange-400">
                 <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+            </div>
+          </Link>
+
+          <Link
+            to="/inspectoria/denuncias-pendientes"
+            className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 hover:bg-yellow-100 transition-colors group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-yellow-800">Denuncias Pendientes</p>
+                <p className="text-xs text-yellow-600 mt-1">Pagadas, listas para crear caso</p>
+              </div>
+              <div className="text-yellow-300 group-hover:text-yellow-400">
+                <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
                 </svg>
               </div>
             </div>

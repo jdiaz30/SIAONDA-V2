@@ -8,8 +8,13 @@ import { AuthRequest } from '../middleware/auth';
 import { obtenerPermisosUsuario } from '../middleware/permissions';
 
 const loginSchema = z.object({
-  nombre: z.string().min(1, 'El usuario o correo es requerido'),
+  codigo: z.string().min(1, 'El código de usuario es requerido').optional(),
+  nombre: z.string().min(1, 'El nombre de usuario es requerido').optional(),
+  correo: z.string().email('Correo inválido').optional(),
   contrasena: z.string().min(1, 'La contraseña es requerida')
+}).refine(data => data.codigo || data.nombre || data.correo, {
+  message: 'Debe proporcionar código, nombre o correo',
+  path: ['codigo']
 });
 
 const refreshSchema = z.object({
@@ -21,15 +26,18 @@ const refreshSchema = z.object({
  * Valida credenciales, genera tokens JWT y gestiona sesiones
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { nombre, contrasena } = loginSchema.parse(req.body);
+  const { codigo, nombre, correo, contrasena } = loginSchema.parse(req.body);
 
-  // Buscar usuario por nombre o correo
+  // Construir condiciones de búsqueda dinámicamente
+  const whereConditions: any[] = [];
+  if (codigo) whereConditions.push({ codigo });
+  if (nombre) whereConditions.push({ nombre });
+  if (correo) whereConditions.push({ correo });
+
+  // Buscar usuario por código, nombre o correo
   const usuario = await prisma.usuario.findFirst({
     where: {
-      OR: [
-        { nombre: nombre },
-        { correo: nombre }
-      ]
+      OR: whereConditions
     },
     include: {
       tipo: true,
@@ -94,9 +102,6 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   // Obtener permisos del usuario
   const permisos = await obtenerPermisosUsuario(usuario.tipoId);
-
-  console.log('🔐 LOGIN DEBUG - Usuario:', usuario.nombre);
-  console.log('🔐 LOGIN DEBUG - requiereCambioContrasena en DB:', usuario.requiereCambioContrasena);
 
   res.json({
     accessToken,
@@ -214,7 +219,7 @@ export const cambiarContrasena = asyncHandler(async (req: AuthRequest, res: Resp
     throw new AppError('No autenticado', 401);
   }
 
-  const { contrasenaActual, contrasenaNueva, confirmarContrasena } = cambiarContrasenaSchema.parse(req.body);
+  const { contrasenaActual, contrasenaNueva } = cambiarContrasenaSchema.parse(req.body);
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: req.usuario.id }

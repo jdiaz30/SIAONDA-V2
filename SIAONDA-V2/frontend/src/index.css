@@ -19,6 +19,32 @@
   box-sizing: border-box;
 }
 
+/* Convertir todos los inputs y textareas a mayúsculas automáticamente */
+input[type="text"]:not([name*="usuario"]):not([name*="user"]):not([name*="login"]):not([name*="codigo"]):not([id*="nombre"]):not([id*="usuario"]),
+input[type="tel"],
+input[type="search"],
+textarea:not([data-no-uppercase]) {
+  text-transform: uppercase;
+}
+
+/* NO convertir a mayúsculas: emails, passwords, URLs, usuarios, códigos */
+input[type="email"],
+input[type="password"],
+input[type="url"],
+input[type="number"],
+input[name*="usuario"],
+input[name*="user"],
+input[name*="login"],
+input[name*="codigo"],
+input[id="nombre"],
+input[id*="usuario"],
+input[placeholder*="usuario"],
+input[placeholder*="correo"],
+input[data-no-uppercase],
+textarea[data-no-uppercase] {
+  text-transform: none;
+}
+
 body {
   min-height: 100vh;
   background-color: #f3f4f6;

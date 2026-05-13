@@ -8,12 +8,20 @@ import {
   cerrarCaso,
   CasoInspeccion
 } from '../../services/inspectoriaService';
+import { api } from '../../services/api';
+
+interface Inspector {
+  id: number;
+  nombrecompleto: string;
+  codigo: string;
+}
 
 export default function CasoDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const [caso, setCaso] = useState<CasoInspeccion | null>(null);
+  const [inspectores, setInspectores] = useState<Inspector[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +43,17 @@ export default function CasoDetailPage() {
 
   useEffect(() => {
     cargarCaso();
+    cargarInspectores();
   }, [id]);
+
+  const cargarInspectores = async () => {
+    try {
+      const response = await api.get('/inspectoria/catalogos/inspectores');
+      setInspectores(response.data.data || []);
+    } catch (err) {
+      console.error('Error cargando inspectores:', err);
+    }
+  };
 
   const cargarCaso = async () => {
     try {
@@ -182,7 +200,13 @@ export default function CasoDetailPage() {
           <p className="text-gray-600">{caso.empresa?.nombreEmpresa}</p>
         </div>
         <button
-          onClick={() => navigate('/inspectoria/casos')}
+          onClick={() => {
+            // Redirigir a inspecciones-parte si es denuncia, casos si es de oficio
+            const destino = caso.tipoCaso === 'DENUNCIA'
+              ? '/inspectoria/inspecciones-parte'
+              : '/inspectoria/casos';
+            navigate(destino);
+          }}
           className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
         >
           Volver al Listado
@@ -256,6 +280,41 @@ export default function CasoDetailPage() {
         )}
       </div>
 
+      {/* Información del Denunciante (solo para denuncias) */}
+      {caso.tipoCaso === 'DENUNCIA' && (caso.denuncianteNombre || caso.detallesDenuncia) && (
+        <div className="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Información del Denunciante</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {caso.denuncianteNombre && (
+              <div>
+                <label className="text-sm font-medium text-gray-500">Nombre</label>
+                <div className="text-gray-900">{caso.denuncianteNombre}</div>
+              </div>
+            )}
+            {caso.denuncianteTelefono && (
+              <div>
+                <label className="text-sm font-medium text-gray-500">Teléfono</label>
+                <div className="text-gray-900">{caso.denuncianteTelefono}</div>
+              </div>
+            )}
+            {caso.denuncianteEmail && (
+              <div className="col-span-2">
+                <label className="text-sm font-medium text-gray-500">Correo Electrónico</label>
+                <div className="text-gray-900">{caso.denuncianteEmail}</div>
+              </div>
+            )}
+          </div>
+          {caso.detallesDenuncia && (
+            <div className="mt-4 pt-4 border-t">
+              <label className="text-sm font-medium text-gray-500">Detalles de la Denuncia</label>
+              <div className="text-gray-900 mt-2 p-3 bg-gray-50 rounded whitespace-pre-wrap">
+                {caso.detallesDenuncia}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Información de la Empresa */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Empresa Inspeccionada</h2>
@@ -282,14 +341,117 @@ export default function CasoDetailPage() {
       {/* Descripción del Caso */}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Descripción del Caso</h2>
-        <p className="text-gray-700 whitespace-pre-wrap">{caso.descripcion}</p>
-        {caso.origen && (
-          <div className="mt-2">
-            <label className="text-sm font-medium text-gray-500">Origen:</label>
-            <div className="text-gray-900">{caso.origen}</div>
+        <p className="text-gray-700 whitespace-pre-wrap">{caso.observaciones || caso.descripcion || 'Sin descripción'}</p>
+        {caso.origenCaso && (
+          <div className="mt-4 pt-4 border-t">
+            <label className="text-sm font-medium text-gray-500">Origen del Caso:</label>
+            <div className="text-gray-900">{caso.origenCaso.replace(/_/g, ' ')}</div>
           </div>
         )}
       </div>
+
+      {/* Historial de Visitas */}
+      {(caso.actaInspeccion || caso.actaInfraccion) && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Historial de Visitas</h2>
+
+          {/* Primera Visita */}
+          {caso.actaInspeccion && (
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-blue-900">Primera Visita - Acta de Inspección</h3>
+                <span className="text-sm text-blue-700">
+                  {new Date(caso.actaInspeccion.fechaVisita).toLocaleDateString('es-DO')}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-blue-700">Hora de Visita:</label>
+                  <p className="text-gray-900">{caso.actaInspeccion.horaVisita || 'No especificada'}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-blue-700">Resultado:</label>
+                  <p className={`font-semibold ${caso.actaInspeccion.cumplimiento ? 'text-green-600' : 'text-red-600'}`}>
+                    {caso.actaInspeccion.cumplimiento ? '✓ Empresa Cumple' : '✗ Infracciones Detectadas'}
+                  </p>
+                </div>
+                {!caso.actaInspeccion.cumplimiento && caso.actaInspeccion.plazoCorreccion && (
+                  <>
+                    <div>
+                      <label className="text-sm font-medium text-blue-700">Plazo de Corrección:</label>
+                      <p className="text-gray-900">{caso.actaInspeccion.plazoCorreccion} días hábiles</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-blue-700">Fecha Límite:</label>
+                      <p className="text-gray-900">
+                        {caso.actaInspeccion.fechaLimite
+                          ? new Date(caso.actaInspeccion.fechaLimite).toLocaleDateString('es-DO')
+                          : 'N/A'}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              {caso.actaInspeccion.hallazgos && (
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-blue-700">Hallazgos y Observaciones:</label>
+                  <p className="text-gray-700 whitespace-pre-wrap mt-1 p-3 bg-white rounded border border-blue-200">
+                    {caso.actaInspeccion.hallazgos}
+                  </p>
+                </div>
+              )}
+              {caso.actaInspeccion.infracciones && (
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-blue-700">Infracciones:</label>
+                  <p className="text-gray-700 whitespace-pre-wrap mt-1 p-3 bg-white rounded border border-blue-200">
+                    {caso.actaInspeccion.infracciones}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Segunda Visita */}
+          {caso.actaInfraccion && (
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-orange-900">Segunda Visita - Acta de Infracción</h3>
+                <span className="text-sm text-orange-700">
+                  {new Date(caso.actaInfraccion.fechaVisita).toLocaleDateString('es-DO')}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-orange-700">Hora de Visita:</label>
+                  <p className="text-gray-900">{caso.actaInfraccion.horaVisita || 'No especificada'}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-orange-700">Resultado:</label>
+                  <p className={`font-semibold ${caso.actaInfraccion.cumplimiento ? 'text-green-600' : 'text-red-600'}`}>
+                    {caso.actaInfraccion.cumplimiento ? '✓ Infracciones Corregidas' : '✗ Infracciones Persisten'}
+                  </p>
+                </div>
+              </div>
+              {caso.actaInfraccion.hallazgos && (
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-orange-700">Hallazgos y Observaciones:</label>
+                  <p className="text-gray-700 whitespace-pre-wrap mt-1 p-3 bg-white rounded border border-orange-200">
+                    {caso.actaInfraccion.hallazgos}
+                  </p>
+                </div>
+              )}
+              {caso.actaInfraccion.infracciones && (
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-orange-700">Infracciones:</label>
+                  <p className="text-gray-700 whitespace-pre-wrap mt-1 p-3 bg-white rounded border border-orange-200">
+                    {caso.actaInfraccion.infracciones}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Asignar Inspector */}
       {caso.estadoCaso?.orden === 1 && (
@@ -309,10 +471,17 @@ export default function CasoDetailPage() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Seleccione un inspector</option>
-                {/* TODO: Cargar inspectores desde el backend */}
-                <option value="1">Inspector 1</option>
-                <option value="2">Inspector 2</option>
+                {inspectores.map((inspector) => (
+                  <option key={inspector.id} value={inspector.id}>
+                    {inspector.nombrecompleto} ({inspector.codigo})
+                  </option>
+                ))}
               </select>
+              {inspectores.length === 0 && (
+                <p className="text-sm text-amber-600 mt-1">
+                  ⚠️ No hay inspectores disponibles. Contacte al administrador.
+                </p>
+              )}
             </div>
             <button
               type="submit"

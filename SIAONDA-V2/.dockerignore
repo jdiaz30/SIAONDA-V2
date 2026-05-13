@@ -1,0 +1,46 @@
+# Archivos de Git
+.git
+.gitignore
+
+# Node modules (se instalan dentro del contenedor)
+**/node_modules
+**/npm-debug.log
+
+# Archivos de entorno locales (se usan .env.docker)
+**/.env
+**/.env.local
+**/.env.development
+
+# Archivos de build (se generan dentro del contenedor)
+**/dist
+**/build
+
+# Archivos de prueba
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+
+# Archivos de documentación
+*.md
+docs/
+
+# Archivos de IDE
+.vscode/
+.idea/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos temporales
+**/temp
+**/tmp
+
+# Archivos de logs
+**/logs
+**/*.log
+
+# Archivos de Docker (evitar recursión)
+Dockerfile*
+docker-compose*.yml
+.dockerignore

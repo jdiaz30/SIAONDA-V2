@@ -185,6 +185,15 @@ export const asentarProduccion = async (
   return response.data.data;
 };
 
+// Devolver producción completa a AAU
+export const devolverProduccionAAU = async (produccionId: number, comentario: string): Promise<any> => {
+  const response = await api.post('/registro/devolver-produccion-aau', {
+    produccionId,
+    comentario
+  });
+  return response.data;
+};
+
 // Devolver obra a AAU
 export const devolverAAAU = async (registroId: number, comentario: string): Promise<Registro> => {
   const response = await api.post('/registro/devolver-aau', {
@@ -256,6 +265,35 @@ export const subirCertificadoFirmado = async (id: number, file: File): Promise<{
   return response.data.data;
 };
 
+// Subir múltiples certificados firmados
+export const subirMultiplesCertificados = async (uploads: Array<{ registroId: number; file: File }>): Promise<{
+  exitosos: number;
+  fallidos: number;
+  resultados: Array<{ registroId: number; success: boolean; error?: string }>;
+}> => {
+  const formData = new FormData();
+
+  // Agregar archivos
+  uploads.forEach(upload => {
+    formData.append('certificados', upload.file);
+  });
+
+  // Agregar IDs como JSON string
+  formData.append('registroIds', JSON.stringify(uploads.map(u => u.registroId)));
+
+  const response = await api.post('/registro/subir-multiples-firmados', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  });
+
+  const resultados = response.data.data;
+  const exitosos = resultados.filter((r: any) => r.success).length;
+  const fallidos = resultados.filter((r: any) => !r.success).length;
+
+  return { exitosos, fallidos, resultados };
+};
+
 // Obtener registros listos para generar certificados
 export const getRegistrosParaCertificados = async (): Promise<Registro[]> => {
   const response = await api.get('/registro/para-certificados');
@@ -285,6 +323,7 @@ export default {
   actualizarEstadoRegistro,
   generarCertificado,
   subirCertificadoFirmado,
+  subirMultiplesCertificados,
   getRegistrosParaCertificados,
   getCertificadosListosAAU,
   enviarAAAU

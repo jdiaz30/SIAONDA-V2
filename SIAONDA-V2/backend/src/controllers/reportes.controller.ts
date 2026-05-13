@@ -548,7 +548,7 @@ export const getDashboardGeneral = asyncHandler(async (req: Request, res: Respon
 // REPORTE: MÉTRICAS DE REGISTROS
 // ============================================
 export const getMetricasRegistros = asyncHandler(async (req: Request, res: Response) => {
-  const { fechaInicio, fechaFin } = req.query;
+  const { fechaInicio, fechaFin, sucursalId } = req.query;
 
   const dateFilter: any = {};
   if (fechaInicio) dateFilter.gte = new Date(fechaInicio as string);
@@ -558,66 +558,166 @@ export const getMetricasRegistros = asyncHandler(async (req: Request, res: Respo
     dateFilter.lte = fin;
   }
 
-  const whereClause = Object.keys(dateFilter).length > 0
+  const whereClause: any = Object.keys(dateFilter).length > 0
     ? { creadoEn: dateFilter }
     : {};
 
-  // Total de registros
-  const totalRegistros = await prisma.registro.count({ where: whereClause });
+  // Filtro por sucursal (si aplica)
+  if (sucursalId && sucursalId !== 'todos') {
+    whereClause.formularioProducto = {
+      formulario: {
+        usuario: {
+          sucursalId: parseInt(sucursalId as string)
+        }
+      }
+    };
+  }
 
-  // Registros por estado
-  const registrosPorEstado = await prisma.registro.groupBy({
-    by: ['estadoId'],
+  // Obtener TODOS los registros para poder agrupar producciones
+  const todosLosRegistros = await prisma.registro.findMany({
     where: whereClause,
-    _count: true
-  });
-
-  const estadosData = await Promise.all(
-    registrosPorEstado.map(async (item) => {
-      const estado = await prisma.registroEstado.findUnique({
-        where: { id: item.estadoId }
-      });
-      return {
-        estado: estado?.nombre || 'Desconocido',
-        cantidad: item._count
-      };
-    })
-  );
-
-  // Registros con IA vs sin IA
-  const registrosConCampoIA = await prisma.formularioProductoCampo.findMany({
-    where: {
-      campo: { campo: 'uso_ia' },
+    include: {
       formularioProducto: {
-        registros: Object.keys(dateFilter).length > 0
-          ? { some: { creadoEn: dateFilter } }
-          : { some: {} }
+        include: {
+          formulario: true,
+          campos: {
+            include: {
+              campo: true
+            }
+          }
+        }
       }
     }
   });
 
-  const registrosConIA = registrosConCampoIA.filter(c => c.valor === 'true').length;
-  const registrosSinIA = registrosConCampoIA.filter(c => c.valor === 'false').length;
+  // Función helper para agrupar producciones
+  const agruparProducciones = (registros: any[]) => {
+    const produccionesVistas = new Set<number>();
+    const registrosAgrupados: any[] = [];
 
-  // Certificados generados y entregados
-  const certificadosGenerados = await prisma.registro.count({
-    where: { ...whereClause, certificadoGenerado: { not: null } }
+    for (const registro of registros) {
+      const formulario = registro.formularioProducto.formulario;
+      const esProduccion = formulario.esProduccion || formulario.produccionPadreId !== null;
+
+      if (esProduccion) {
+        const formularioPadreId = formulario.produccionPadreId || formulario.id;
+        if (!produccionesVistas.has(formularioPadreId)) {
+          produccionesVistas.add(formularioPadreId);
+          registrosAgrupados.push(registro);
+        }
+      } else {
+        registrosAgrupados.push(registro);
+      }
+    }
+
+    return registrosAgrupados;
+  };
+
+  const registrosUnicos = agruparProducciones(todosLosRegistros);
+  const totalRegistros = registrosUnicos.length;
+
+  // Registros por estado - con agrupación de producciones
+  const estadosMap = new Map<number, number>();
+
+  for (const registro of registrosUnicos) {
+    const estadoId = registro.estadoId;
+    estadosMap.set(estadoId, (estadosMap.get(estadoId) || 0) + 1);
+  }
+
+  const estadosData = await Promise.all(
+    Array.from(estadosMap.entries()).map(async ([estadoId, cantidad]) => {
+      const estado = await prisma.registroEstado.findUnique({
+        where: { id: estadoId }
+      });
+      // Formatear nombre del estado: reemplazar guiones bajos con espacios y capitalizar
+      const nombreFormateado = estado?.nombre
+        ? estado.nombre.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        : 'Desconocido';
+      return {
+        estado: nombreFormateado,
+        cantidad: cantidad
+      };
+    })
+  );
+
+  // Registros con IA vs sin IA - con agrupación de producciones
+  let registrosConIA = 0;
+  let registrosSinIA = 0;
+
+  for (const registro of registrosUnicos) {
+    const campos = registro.formularioProducto.campos;
+    const campoIA = campos.find((c: any) => c.campo.campo === 'uso_ia');
+
+    if (campoIA) {
+      // El valor puede ser 'SI', 'NO', 'true', 'false' dependiendo del tipo de registro
+      const valorIA = campoIA.valor?.toUpperCase();
+      if (valorIA === 'SI' || valorIA === 'TRUE') {
+        registrosConIA++;
+      } else if (valorIA === 'NO' || valorIA === 'FALSE') {
+        registrosSinIA++;
+      }
+    }
+  }
+
+  // Certificados generados y entregados - con agrupación de producciones
+  const certificadosGenerados = registrosUnicos.filter(r => r.certificadoGenerado !== null).length;
+
+  // Para certificados entregados, contamos desde historial_entregas con agrupación de producciones
+  const whereEntregas: any = {
+    tipo: 'OBRA'
+  };
+
+  // Aplicar filtro de fecha si existe
+  if (Object.keys(dateFilter).length > 0) {
+    whereEntregas.fechaEntrega = dateFilter;
+  }
+
+  // Aplicar filtro de sucursal si existe
+  if (sucursalId && sucursalId !== 'todos') {
+    whereEntregas.formulario = {
+      usuario: {
+        sucursalId: parseInt(sucursalId as string)
+      }
+    };
+  }
+
+  const entregasObras = await prisma.historialEntrega.findMany({
+    where: whereEntregas,
+    include: {
+      formulario: true
+    }
   });
 
-  const certificadosEntregados = await prisma.registro.count({
-    where: { ...whereClause, fechaEntregado: { not: null } }
-  });
+  // Aplicar agrupación de producciones a entregas
+  const produccionesEntregadas = new Set<number>();
+  let certificadosEntregados = 0;
 
-  // Registros por tipo de obra
-  const registrosPorTipo = await prisma.registro.groupBy({
-    by: ['tipoObra'],
-    where: whereClause,
-    _count: true
-  });
+  for (const entrega of entregasObras) {
+    if (entrega.formulario) {
+      const esProduccion = entrega.formulario.esProduccion || entrega.formulario.produccionPadreId !== null;
+      if (esProduccion) {
+        const formularioPadreId = entrega.formulario.produccionPadreId || entrega.formulario.id;
+        if (!produccionesEntregadas.has(formularioPadreId)) {
+          produccionesEntregadas.add(formularioPadreId);
+          certificadosEntregados++;
+        }
+      } else {
+        certificadosEntregados++;
+      }
+    }
+  }
 
-  const tiposData = registrosPorTipo.map(item => ({
-    tipo: item.tipoObra,
-    cantidad: item._count
+  // Registros por tipo de obra - con agrupación de producciones
+  const tiposMap = new Map<string, number>();
+
+  for (const registro of registrosUnicos) {
+    const tipo = registro.tipoObra || 'Sin especificar';
+    tiposMap.set(tipo, (tiposMap.get(tipo) || 0) + 1);
+  }
+
+  const tiposData = Array.from(tiposMap.entries()).map(([tipo, cantidad]) => ({
+    tipo: tipo,
+    cantidad: cantidad
   }));
 
   // Tendencia mensual (últimos 6 meses)
@@ -651,7 +751,7 @@ export const getMetricasRegistros = asyncHandler(async (req: Request, res: Respo
       certificados: {
         generados: certificadosGenerados,
         entregados: certificadosEntregados,
-        pendientes: certificadosGenerados - certificadosEntregados
+        pendientes: totalRegistros - certificadosGenerados
       },
       registrosPorTipo: tiposData,
       tendenciaMensual

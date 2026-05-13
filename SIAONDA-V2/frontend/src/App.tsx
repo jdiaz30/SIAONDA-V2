@@ -3,7 +3,7 @@ import { useAuthStore } from './store/authStore';
 import LoginPage from './pages/LoginPage';
 import CambiarContrasenaPage from './pages/CambiarContrasenaPage';
 import DashboardPage from './pages/DashboardPage';
-import DashboardRegistroPage from './pages/DashboardRegistroPage';
+import DashboardRegistroPage from './pages/registro/DashboardRegistroPage';
 import UsuariosPage from './pages/UsuariosPage';
 import ClientesPage from './pages/clientes/ClientesPage';
 import ClienteFormPage from './pages/clientes/ClienteFormPage';
@@ -22,6 +22,7 @@ import EmpresasPage from './pages/inspectoria/EmpresasPage';
 import EmpresaFormPage from './pages/inspectoria/EmpresaFormPage';
 import EmpresaDetailPage from './pages/inspectoria/EmpresaDetailPage';
 import EmpresaEditIRCPage from './pages/inspectoria/EmpresaEditIRCPage';
+import EmpresaVigenteFormPage from './pages/inspectoria/EmpresaVigenteFormPage';
 import EmpresasVencidasPage from './pages/inspectoria/EmpresasVencidasPage';
 import SolicitudesPage from './pages/inspectoria/SolicitudesPage';
 import SolicitudFormPage from './pages/inspectoria/SolicitudFormPage';
@@ -29,6 +30,8 @@ import SolicitudWorkflowPage from './pages/inspectoria/SolicitudWorkflowPage';
 import CasosPage from './pages/inspectoria/CasosPage';
 import CasoFormPage from './pages/inspectoria/CasoFormPage';
 import CasoDetailPage from './pages/inspectoria/CasoDetailPage';
+import DenunciasPendientesPage from './pages/inspectoria/DenunciasPendientesPage';
+import InspeccionesDePartePage from './pages/inspectoria/InspeccionesDePartePage';
 import RegistrosAsentamientoPage from './pages/inspectoria/RegistrosAsentamientoPage';
 import CertificadosPendientesInspectoriaPage from './pages/inspectoria/CertificadosPendientesPage';
 
@@ -39,6 +42,9 @@ import ActaOficioFormPage from './pages/inspectoria/ActaOficioFormPage';
 import ActasListPage from './pages/inspectoria/ActasListPage';
 import ActaOficioEditPage from './pages/inspectoria/ActaOficioEditPage';
 import CasosJuridicosPage from './pages/juridico/CasosJuridicosPage';
+import ActosContratosPage from './pages/juridico/ActosContratosPage';
+import ActoContratoDetallePage from './pages/juridico/ActoContratoDetallePage';
+import DashboardFinancieroPage from './pages/financiero/DashboardFinancieroPage';
 import DashboardAauPage from './pages/aau/DashboardAauPage';
 import FormulariosListPage from './pages/aau/FormulariosListPage';
 import FormulariosDevueltosPage from './pages/aau/FormulariosDevueltosPage';
@@ -120,6 +126,7 @@ function App() {
             <Route path="/inspectoria/empresas" element={<EmpresasPage />} />
             <Route path="/inspectoria/empresas/vencidas" element={<EmpresasVencidasPage />} />
             <Route path="/inspectoria/empresas/nueva" element={<EmpresaFormPage />} />
+            <Route path="/inspectoria/empresas/vigente" element={<EmpresaVigenteFormPage />} />
             <Route path="/inspectoria/empresas/:id" element={<EmpresaDetailPage />} />
             <Route path="/inspectoria/empresas/:id/editar" element={<EmpresaEditIRCPage />} />
             <Route path="/inspectoria/solicitudes" element={<SolicitudesPage />} />
@@ -130,6 +137,8 @@ function App() {
             <Route path="/inspectoria/casos" element={<CasosPage />} />
             <Route path="/inspectoria/casos/nuevo" element={<CasoFormPage />} />
             <Route path="/inspectoria/casos/:id" element={<CasoDetailPage />} />
+            <Route path="/inspectoria/denuncias-pendientes" element={<DenunciasPendientesPage />} />
+            <Route path="/inspectoria/inspecciones-parte" element={<InspeccionesDePartePage />} />
 
             {/* Nuevo flujo de inspecciones */}
             <Route path="/inspectoria/viajes-oficio" element={<ViajesOficioPage />} />
@@ -157,6 +166,11 @@ function App() {
 
             {/* Rutas de Jurídico */}
             <Route path="/juridico" element={<CasosJuridicosPage />} />
+            <Route path="/juridico/actos-contratos" element={<ActosContratosPage />} />
+            <Route path="/juridico/actos-contratos/:id" element={<ActoContratoDetallePage />} />
+
+            {/* Rutas de Financiero */}
+            <Route path="/financiero/dashboard" element={<DashboardFinancieroPage />} />
           </Route>
         ) : (
           <Route path="*" element={<Navigate to="/login" />} />

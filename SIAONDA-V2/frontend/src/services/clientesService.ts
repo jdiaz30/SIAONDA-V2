@@ -146,7 +146,20 @@ export const clientesService = {
 
   getNacionalidades: async (): Promise<ClienteNacionalidad[]> => {
     const response = await api.get('/clientes/nacionalidades');
-    return response.data;
+    const nacionalidades = response.data;
+
+    // Poner República Dominicana primero
+    const rdIndex = nacionalidades.findIndex((n: ClienteNacionalidad) =>
+      n.nombre.toLowerCase().includes('dominicana') ||
+      n.nombre.toLowerCase().includes('república dominicana')
+    );
+
+    if (rdIndex > 0) {
+      const rd = nacionalidades.splice(rdIndex, 1)[0];
+      nacionalidades.unshift(rd);
+    }
+
+    return nacionalidades;
   }
 };
 

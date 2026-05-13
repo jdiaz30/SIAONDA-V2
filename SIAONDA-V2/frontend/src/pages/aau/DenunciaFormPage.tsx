@@ -29,8 +29,8 @@ export default function DenunciaFormPage() {
   const handleCedulaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 5 * 1024 * 1024) {
-        alert('El archivo no debe superar los 5 MB');
+      if (file.size > 15 * 1024 * 1024) {
+        alert('El archivo no debe superar los 15 MB');
         return;
       }
       setCedulaFile(file);
@@ -40,8 +40,8 @@ export default function DenunciaFormPage() {
   const handleComunicacionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 10 * 1024 * 1024) {
-        alert('El archivo no debe superar los 10 MB');
+      if (file.size > 15 * 1024 * 1024) {
+        alert('El archivo no debe superar los 15 MB');
         return;
       }
       setComunicacionFile(file);
@@ -264,7 +264,6 @@ export default function DenunciaFormPage() {
                     accept="image/*,application/pdf"
                     onChange={handleCedulaChange}
                     className="hidden"
-                    required
                   />
                   <label
                     htmlFor="cedula"
@@ -275,7 +274,7 @@ export default function DenunciaFormPage() {
                       {cedulaFile ? cedulaFile.name : 'Click para subir cédula'}
                     </span>
                     <span className="text-xs text-gray-500 mt-1">
-                      Imagen o PDF (máx. 5MB)
+                      Imagen o PDF (máx. 15MB)
                     </span>
                   </label>
                 </div>
@@ -293,7 +292,6 @@ export default function DenunciaFormPage() {
                     accept="image/*,application/pdf"
                     onChange={handleComunicacionChange}
                     className="hidden"
-                    required
                   />
                   <label
                     htmlFor="comunicacion"
@@ -304,7 +302,7 @@ export default function DenunciaFormPage() {
                       {comunicacionFile ? comunicacionFile.name : 'Click para subir documento'}
                     </span>
                     <span className="text-xs text-gray-500 mt-1">
-                      Imagen o PDF (máx. 10MB)
+                      Imagen o PDF (máx. 15MB)
                     </span>
                   </label>
                 </div>

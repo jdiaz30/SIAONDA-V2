@@ -21,6 +21,29 @@ export const getDashboard = async (req: Request, res: Response) => {
     finMes.setDate(0);
     finMes.setHours(23, 59, 59, 999);
 
+    // Obtener estados de casos primero
+    const [estadoPendiente, estadoEnProceso, estadoCompletado] = await Promise.all([
+      prisma.estadoCasoInspeccion.findFirst({ where: { nombre: 'PENDIENTE' } }),
+      prisma.estadoCasoInspeccion.findFirst({ where: { nombre: 'EN_PROCESO' } }),
+      prisma.estadoCasoInspeccion.findFirst({ where: { nombre: 'COMPLETADO' } })
+    ]);
+
+    // Calcular ingresos del mes de inspectoría
+    const facturasSolicitudes = await prisma.solicitudRegistroInspeccion.findMany({
+      where: { facturaId: { not: null } },
+      select: { facturaId: true }
+    });
+    const facturasDenuncias = await prisma.denuncia.findMany({
+      where: { facturaId: { not: null } },
+      select: { facturaId: true }
+    });
+    const facturasInspectoriaIds = [
+      ...new Set([
+        ...facturasSolicitudes.map(s => s.facturaId!),
+        ...facturasDenuncias.map(d => d.facturaId!)
+      ])
+    ];
+
     // Ejecutar todas las queries en paralelo
     const [
       empresasVencidas,
@@ -29,8 +52,8 @@ export const getDashboard = async (req: Request, res: Response) => {
       solicitudesPendientesAsentamiento,
       solicitudesPendientesFirma,
       casosPendientesAsignacion,
-      casosEnPlazoGracia,
-      casosParaSegundaVisita,
+      casosEnProceso,
+      casosCompletados,
       totalEmpresas,
       totalSolicitudes,
       totalCasos,
@@ -67,19 +90,19 @@ export const getDashboard = async (req: Request, res: Response) => {
         where: { estadoId: 5 } // ASENTADA (pendientes de generar certificado)
       }),
 
-      // Casos pendientes asignación
+      // Casos pendientes asignación (estado PENDIENTE)
       prisma.casoInspeccion.count({
-        where: { estadoCasoId: 1 } // PENDIENTE_ASIGNACION
+        where: { estadoCasoId: estadoPendiente?.id || 1 }
       }),
 
-      // Casos en plazo de gracia
+      // Casos en proceso (asignados e iniciados)
       prisma.casoInspeccion.count({
-        where: { estadoCasoId: 3 } // EN_PLAZO_GRACIA
+        where: { estadoCasoId: estadoEnProceso?.id || 3 }
       }),
 
-      // Casos para 2da visita (reactivados)
+      // Casos completados (listos para cierre)
       prisma.casoInspeccion.count({
-        where: { estadoCasoId: 4 } // REACTIVADO
+        where: { estadoCasoId: estadoCompletado?.id || 4 }
       }),
 
       // Total de empresas
@@ -91,12 +114,12 @@ export const getDashboard = async (req: Request, res: Response) => {
       // Total de casos
       prisma.casoInspeccion.count(),
 
-      // Ingresos del mes
+      // Ingresos del mes - Facturas pagadas de inspectoría
       prisma.factura.aggregate({
         where: {
+          id: { in: facturasInspectoriaIds },
           fecha: { gte: inicioMes, lte: finMes },
-          solicitudInspeccion: { isNot: null },
-          estadoId: 2 // PAGADA
+          estadoId: 4 // PAGADA
         },
         _sum: {
           total: true
@@ -118,8 +141,8 @@ export const getDashboard = async (req: Request, res: Response) => {
         },
         casosPendientes: {
           pendientesAsignacion: casosPendientesAsignacion,
-          enPlazoGracia: casosEnPlazoGracia,
-          paraSegundaVisita: casosParaSegundaVisita
+          enPlazoGracia: casosEnProceso, // Casos en proceso de inspección
+          paraSegundaVisita: casosCompletados // Casos completados pendientes de cierre
         },
         estadisticas: {
           totalEmpresas,

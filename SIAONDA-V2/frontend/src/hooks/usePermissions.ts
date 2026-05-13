@@ -123,6 +123,13 @@ export function usePermissions() {
     if (isAdmin() || isDirector()) return true;
 
     const moduloUpper = modulo.toUpperCase();
+    const tipo = usuario?.tipo?.toUpperCase() || '';
+
+    // FUNCIONARIO_EVENTO puede acceder a ATU y CAJAS
+    if (tipo === 'FUNCIONARIO_EVENTO') {
+      return moduloUpper === 'ATU' || moduloUpper === 'CAJAS';
+    }
+
     const moduloPrincipal = getModuloPrincipal();
 
     return moduloPrincipal === moduloUpper;

@@ -61,16 +61,14 @@ export const listarCasosJuridicos = async (req: Request, res: Response) => {
                 select: {
                   id: true,
                   numeroActa: true,
-                  rutaPdfActa: true,
-                  fechaCreacion: true
+                  creadoEn: true
                 }
               },
               actaInfraccion: {
                 select: {
                   id: true,
                   numeroActa: true,
-                  rutaPdfActa: true,
-                  fechaCreacion: true
+                  creadoEn: true
                 }
               }
             }
@@ -328,6 +326,149 @@ export const obtenerEstados = async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       message: 'Error al obtener estados',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * OBTENER LISTADO DE ACTOS Y CONTRATOS
+ * GET /api/juridico/actos-contratos
+ */
+export const getActosContratos = async (req: Request, res: Response) => {
+  try {
+    const formularios = await prisma.formulario.findMany({
+      where: {
+        productos: {
+          some: {
+            producto: {
+              categoria: 'ACTOS_CONTRATOS'
+            }
+          }
+        }
+      },
+      include: {
+        estado: true,
+        productos: {
+          include: {
+            producto: true
+          }
+        },
+        clientes: {
+          include: {
+            cliente: true
+          },
+          take: 1 // Solo el primer cliente para el listado
+        }
+      },
+      orderBy: {
+        fecha: 'desc'
+      }
+    });
+
+    const actosContratos = formularios.map(form => {
+      const primerProducto = form.productos[0];
+      const primerCliente = form.clientes[0]?.cliente;
+
+      return {
+        id: form.id,
+        codigo: form.codigo,
+        fecha: form.fecha,
+        productoNombre: primerProducto?.producto.nombre || '',
+        productoCategoria: primerProducto?.producto.categoria || '',
+        clienteNombre: primerCliente?.nombrecompleto || 'Sin cliente',
+        estado: form.estado.nombre,
+        montoTotal: parseFloat(form.montoTotal.toString())
+      };
+    });
+
+    res.json(actosContratos);
+  } catch (error) {
+    console.error('Error cargando actos y contratos:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al cargar actos y contratos',
+      error: error instanceof Error ? error.message : 'Error desconocido'
+    });
+  }
+};
+
+/**
+ * OBTENER DETALLE DE UN ACTO O CONTRATO
+ * GET /api/juridico/actos-contratos/:id
+ */
+export const getActoContratoDetalle = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const formulario = await prisma.formulario.findUnique({
+      where: { id: parseInt(id) },
+      include: {
+        estado: true,
+        productos: {
+          include: {
+            producto: true,
+            campos: {
+              include: {
+                campo: true
+              }
+            },
+            archivos: true
+          }
+        },
+        clientes: {
+          include: {
+            cliente: true
+          }
+        }
+      }
+    });
+
+    if (!formulario) {
+      return res.status(404).json({
+        success: false,
+        message: 'Acto o contrato no encontrado'
+      });
+    }
+
+    const primerProducto = formulario.productos[0];
+    const primerCliente = formulario.clientes[0]?.cliente;
+
+    // Mapear campos específicos del formulario
+    const campos = primerProducto?.campos.map(c => ({
+      titulo: c.campo.titulo,
+      valor: c.valor
+    })) || [];
+
+    const detalle = {
+      id: formulario.id,
+      codigo: formulario.codigo,
+      fecha: formulario.fecha,
+      productoNombre: primerProducto?.producto.nombre || '',
+      productoCategoria: primerProducto?.producto.categoria || '',
+      estado: formulario.estado.nombre,
+      montoTotal: parseFloat(formulario.montoTotal.toString()),
+      observaciones: formulario.observaciones || '',
+      cliente: {
+        nombrecompleto: primerCliente?.nombrecompleto || '',
+        identificacion: primerCliente?.identificacion || '',
+        telefono: primerCliente?.telefono || '',
+        correo: primerCliente?.correo || ''
+      },
+      campos,
+      archivos: primerProducto?.archivos.map(a => ({
+        id: a.id,
+        nombreOriginal: a.nombreOriginal,
+        ruta: a.ruta
+      })) || []
+    };
+
+    res.json(detalle);
+  } catch (error) {
+    console.error('Error al obtener detalle:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener detalle de acto/contrato',
       error: error instanceof Error ? error.message : 'Error desconocido'
     });
   }

@@ -7,6 +7,7 @@ import {
   EmpresaInspeccionada,
   CategoriaIRC
 } from '../../services/inspectoriaService';
+import { formatRNC } from '../../utils/formatters';
 
 export default function SolicitudFormPage() {
   const navigate = useNavigate();
@@ -212,7 +213,7 @@ export default function SolicitudFormPage() {
                   <input
                     type="text"
                     value={rncBusqueda}
-                    onChange={(e) => setRncBusqueda(e.target.value)}
+                    onChange={(e) => setRncBusqueda(formatRNC(e.target.value))}
                     placeholder="XXX-XXXXX-X"
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
@@ -295,7 +296,7 @@ export default function SolicitudFormPage() {
                 <input
                   type="text"
                   value={datosNuevaEmpresa.nombreEmpresa}
-                  onChange={(e) => setDatosNuevaEmpresa({ ...datosNuevaEmpresa, nombreEmpresa: e.target.value })}
+                  onChange={(e) => setDatosNuevaEmpresa({ ...datosNuevaEmpresa, nombreEmpresa: e.target.value.toUpperCase() })}
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -308,7 +309,7 @@ export default function SolicitudFormPage() {
                 <input
                   type="text"
                   value={datosNuevaEmpresa.nombreComercial}
-                  onChange={(e) => setDatosNuevaEmpresa({ ...datosNuevaEmpresa, nombreComercial: e.target.value })}
+                  onChange={(e) => setDatosNuevaEmpresa({ ...datosNuevaEmpresa, nombreComercial: e.target.value.toUpperCase() })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -320,7 +321,7 @@ export default function SolicitudFormPage() {
                 <input
                   type="text"
                   value={datosNuevaEmpresa.rnc}
-                  onChange={(e) => setDatosNuevaEmpresa({ ...datosNuevaEmpresa, rnc: e.target.value })}
+                  onChange={(e) => setDatosNuevaEmpresa({ ...datosNuevaEmpresa, rnc: formatRNC(e.target.value) })}
                   placeholder="XXX-XXXXX-X"
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"

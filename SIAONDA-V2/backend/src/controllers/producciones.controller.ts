@@ -67,6 +67,14 @@ export const createProduccion = asyncHandler(async (req: AuthRequest, res: Respo
   const { tituloProduccion, productoId, clientes, obras, observaciones } = validation.data;
   const usuarioId = req.usuario!.id;
 
+  // Obtener la sucursal del usuario
+  const usuario = await prisma.usuario.findUnique({
+    where: { id: usuarioId },
+    select: { sucursalId: true }
+  });
+
+  const sucursalId = usuario?.sucursalId || null;
+
   // Obtener el producto para calcular el costo
   const producto = await prisma.producto.findUnique({
     where: { id: productoId },
@@ -114,6 +122,7 @@ export const createProduccion = asyncHandler(async (req: AuthRequest, res: Respo
         codigo: codigoProduccion,
         estadoId: estadoPendiente.id,
         usuarioId,
+        sucursalId,
         esProduccion: true,
         tituloProduccion,
         montoTotal: precioProduccion,
@@ -160,32 +169,38 @@ export const createProduccion = asyncHandler(async (req: AuthRequest, res: Respo
     for (const obra of obras) {
       const codigoObra = await generateCodigoFormulario(tx);
 
-      // Buscar el campo "titulo" o "titulo_obra" para guardar el título de esta obra específica
+      // Buscar el campo "titulo" para el título individual de la obra
       const campoTitulo = await tx.formularioCampo.findFirst({
         where: {
           productoId,
-          OR: [
-            { campo: { contains: 'titulo', mode: 'insensitive' } },
-            { titulo: { contains: 'titulo', mode: 'insensitive' } }
-          ]
+          campo: 'titulo'
+        }
+      });
+
+      // Buscar el campo "titulo_produccion" para el título padre
+      const campoTituloProduccion = await tx.formularioCampo.findFirst({
+        where: {
+          productoId,
+          campo: 'titulo_produccion'
         }
       });
 
       // DEBUG: Ver qué campos vienen del frontend
       console.log(`\n=== OBRA ${obras.indexOf(obra) + 1} ===`);
-      console.log('Título enviado:', obra.titulo);
+      console.log('Título obra individual:', obra.titulo);
+      console.log('Título producción padre:', tituloProduccion);
       console.log('Campos enviados:', obra.campos.length);
       obra.campos.forEach(c => {
         console.log(`  - Campo ID ${c.campoId}: "${c.valor}"`);
       });
 
-      // Preparar los campos: incluir el título como primer campo si existe
+      // Preparar los campos: incluir título individual y título de producción
       const camposParaCrear = [...obra.campos];
+
+      // Agregar título individual de la obra
       if (campoTitulo && obra.titulo) {
-        // Verificar si ya existe el campo de título en los campos enviados
         const yaExisteTitulo = camposParaCrear.some(c => c.campoId === campoTitulo.id);
         if (!yaExisteTitulo) {
-          // Agregar el título como primer campo
           camposParaCrear.unshift({
             campoId: campoTitulo.id,
             valor: obra.titulo
@@ -193,7 +208,26 @@ export const createProduccion = asyncHandler(async (req: AuthRequest, res: Respo
         }
       }
 
+      // Agregar título de la producción padre (IMPORTANTE para agrupar en el historial)
+      if (campoTituloProduccion) {
+        const yaExisteTituloProduccion = camposParaCrear.some(c => c.campoId === campoTituloProduccion.id);
+        if (!yaExisteTituloProduccion) {
+          camposParaCrear.push({
+            campoId: campoTituloProduccion.id,
+            valor: tituloProduccion  // Usar el título padre de la producción
+          });
+        } else {
+          // Si ya existe, reemplazar con el título padre correcto
+          const idx = camposParaCrear.findIndex(c => c.campoId === campoTituloProduccion.id);
+          if (idx >= 0) {
+            camposParaCrear[idx].valor = tituloProduccion;
+          }
+        }
+      }
+
       console.log('Campos a guardar:', camposParaCrear.length);
+      console.log('  ✅ Título obra:', obra.titulo);
+      console.log('  ✅ Título producción:', tituloProduccion);
       console.log('====================\n');
 
       const obraCreada = await tx.formulario.create({
@@ -201,6 +235,7 @@ export const createProduccion = asyncHandler(async (req: AuthRequest, res: Respo
           codigo: codigoObra,
           estadoId: estadoPendiente.id,
           usuarioId,
+          sucursalId,
           esProduccion: false,
           produccionPadreId: formularioPadre.id,
           montoTotal: 0, // Las obras hijas no tienen costo individual

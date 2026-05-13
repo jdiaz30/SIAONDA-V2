@@ -202,7 +202,7 @@ export default function DenunciaDetailPage() {
             <div className="space-y-3">
               {denuncia.rutaCedulaDenunciante && (
                 <a
-                  href={`http://localhost:3000/${denuncia.rutaCedulaDenunciante}`}
+                  href={`http://localhost:3000/api/denuncias/${denuncia.id}/archivo/cedula`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -217,7 +217,7 @@ export default function DenunciaDetailPage() {
               )}
               {denuncia.rutaComunicacion && (
                 <a
-                  href={`http://localhost:3000/${denuncia.rutaComunicacion}`}
+                  href={`http://localhost:3000/api/denuncias/${denuncia.id}/archivo/comunicacion`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"

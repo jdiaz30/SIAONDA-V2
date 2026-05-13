@@ -9,6 +9,7 @@ import {
   ClienteEmpresa,
   Catalogos
 } from '../../services/inspectoriaService';
+import { formatPhoneNumber, formatCedula, validateCedula } from '../../utils/formatters';
 
 export default function EmpresaFormPage() {
   const { id } = useParams();
@@ -37,6 +38,9 @@ export default function EmpresaFormPage() {
     fechaInicioActividades: '',
     // Consejo detallado se guarda en consejoAdministracion[]
   });
+
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<any>(null);
+  const [subcategoriaSeleccionada, setSubcategoriaSeleccionada] = useState<string>('');
 
   const [formData, setFormData] = useState<Partial<EmpresaInspeccionada>>({
     nombreEmpresa: '',
@@ -151,8 +155,63 @@ export default function EmpresaFormPage() {
     } else if (type === 'number') {
       setFormData({ ...formData, [name]: value ? parseInt(value) : 0 });
     } else {
-      setFormData({ ...formData, [name]: value });
+      // Auto-formatting for specific fields
+      let formattedValue = value;
+
+      // RNC formatting
+      if (name === 'rnc') {
+        const digits = value.replace(/\D/g, '').slice(0, 9);
+        if (digits.length > 8) {
+          formattedValue = `${digits.slice(0, 3)}-${digits.slice(3, 8)}-${digits.slice(8)}`;
+        } else if (digits.length > 3) {
+          formattedValue = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+        } else {
+          formattedValue = digits;
+        }
+      }
+
+      // Cédula formatting
+      if (name === 'cedulaPropietario') {
+        const digits = value.replace(/\D/g, '').slice(0, 11);
+        if (digits.length > 10) {
+          formattedValue = `${digits.slice(0, 3)}-${digits.slice(3, 10)}-${digits.slice(10)}`;
+        } else if (digits.length > 3) {
+          formattedValue = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+        } else {
+          formattedValue = digits;
+        }
+      }
+
+      // Teléfono formatting
+      if (name === 'telefono' || name === 'telefonoSecundario') {
+        const digits = value.replace(/\D/g, '').slice(0, 10);
+        if (digits.length > 6) {
+          formattedValue = `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+        } else if (digits.length > 3) {
+          formattedValue = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+        } else {
+          formattedValue = digits;
+        }
+      }
+
+      // Uppercase for names and addresses
+      if (name === 'nombreEmpresa' || name === 'nombreComercial' || name === 'nombrePropietario' ||
+          name === 'direccion' || name === 'sector') {
+        formattedValue = value.toUpperCase();
+      }
+
+      setFormData({ ...formData, [name]: formattedValue });
     }
+  };
+
+  const handleCategoriaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const categoriaId = parseInt(e.target.value);
+    setFormData({ ...formData, categoriaIrcId: categoriaId });
+
+    // Buscar la categoría seleccionada
+    const categoria = catalogos?.categoriasIRC.find(c => c.id === categoriaId);
+    setCategoriaSeleccionada(categoria);
+    setSubcategoriaSeleccionada(''); // Reset subcategoría
   };
 
   const agregarMiembroConsejo = () => {
@@ -208,9 +267,8 @@ export default function EmpresaFormPage() {
   };
 
   const validarCedula = (cedula: string): boolean => {
-    // Cédula: 11 dígitos sin guiones, o 13 con guiones (XXX-XXXXXXX-X)
-    const cedulaSinGuiones = cedula.replace(/-/g, '');
-    return cedulaSinGuiones.length === 11 && /^\d+$/.test(cedulaSinGuiones);
+    // Usar función de validación con algoritmo de verificación
+    return validateCedula(cedula);
   };
 
   const buscarEmpresaRenovacion = async () => {
@@ -603,18 +661,43 @@ export default function EmpresaFormPage() {
               <select
                 name="categoriaIrcId"
                 value={formData.categoriaIrcId}
-                onChange={handleChange}
+                onChange={handleCategoriaChange}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Seleccione una categoría</option>
                 {catalogos.categoriasIRC.map((cat) => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.codigo} - {cat.nombre} (RD$ {cat.precio.toLocaleString()})
+                    {cat.codigo} - {cat.nombre} {!cat.subcategorias && `(RD$ ${cat.precio.toLocaleString()})`}
                   </option>
                 ))}
               </select>
             </div>
+
+            {/* Selector de Subcategoría (solo si la categoría tiene subcategorías) */}
+            {categoriaSeleccionada?.subcategorias && categoriaSeleccionada.subcategorias.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Subcategoría / Tamaño <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={subcategoriaSeleccionada}
+                  onChange={(e) => setSubcategoriaSeleccionada(e.target.value)}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Seleccione una opción</option>
+                  {categoriaSeleccionada.subcategorias.map((subcat: any) => (
+                    <option key={subcat.codigo} value={subcat.codigo}>
+                      {subcat.nombre} (RD$ {subcat.precio.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  {categoriaSeleccionada.codigo === 'IRC-09' ? 'Categoría según tamaño de estación' : 'Seleccione según tamaño de empresa'}
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -808,7 +891,7 @@ export default function EmpresaFormPage() {
                     type="text"
                     placeholder="Nombre completo"
                     value={nuevoMiembro.nombreCompleto}
-                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, nombreCompleto: e.target.value })}
+                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, nombreCompleto: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -818,7 +901,7 @@ export default function EmpresaFormPage() {
                     type="text"
                     placeholder="Ej: Presidente, Vicepresidente, Secretario"
                     value={nuevoMiembro.cargo}
-                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, cargo: e.target.value })}
+                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, cargo: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -828,7 +911,7 @@ export default function EmpresaFormPage() {
                     type="text"
                     placeholder="XXX-XXXXXXX-X"
                     value={nuevoMiembro.cedula}
-                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, cedula: e.target.value })}
+                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, cedula: formatCedula(e.target.value) })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -838,7 +921,7 @@ export default function EmpresaFormPage() {
                     type="text"
                     placeholder="Dirección completa"
                     value={nuevoMiembro.domicilio}
-                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, domicilio: e.target.value })}
+                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, domicilio: e.target.value.toUpperCase() })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -848,7 +931,7 @@ export default function EmpresaFormPage() {
                     type="tel"
                     placeholder="809-555-1234"
                     value={nuevoMiembro.telefono}
-                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, telefono: e.target.value })}
+                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, telefono: formatPhoneNumber(e.target.value) })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -858,7 +941,7 @@ export default function EmpresaFormPage() {
                     type="tel"
                     placeholder="809-555-5678"
                     value={nuevoMiembro.celular}
-                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, celular: e.target.value })}
+                    onChange={(e) => setNuevoMiembro({ ...nuevoMiembro, celular: formatPhoneNumber(e.target.value) })}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -959,7 +1042,7 @@ export default function EmpresaFormPage() {
                 type="tel"
                 name="celular"
                 value={datosAdicionales.celular}
-                onChange={(e) => setDatosAdicionales({ ...datosAdicionales, celular: e.target.value })}
+                onChange={(e) => setDatosAdicionales({ ...datosAdicionales, celular: formatPhoneNumber(e.target.value) })}
                 placeholder="809-555-5678"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />

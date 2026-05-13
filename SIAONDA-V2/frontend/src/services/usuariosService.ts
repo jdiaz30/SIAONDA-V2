@@ -111,6 +111,14 @@ const usuariosService = {
   },
 
   /**
+   * Activar usuario
+   */
+  async activarUsuario(id: number) {
+    const response = await api.post(`/usuarios/${id}/activar`);
+    return response.data;
+  },
+
+  /**
    * Restablecer contraseña de un usuario (solo admin)
    */
   async restablecerContrasena(id: number, data?: RestablecerContrasenaData) {

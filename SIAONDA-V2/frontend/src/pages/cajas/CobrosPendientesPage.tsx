@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FiDollarSign, FiFileText, FiAlertTriangle, FiCheckCircle, FiSearch } from 'react-icons/fi';
-import api from '../../services/api';
+import api, { getFileUrl } from '../../services/api';
 
 interface Cobro {
   id: number;
@@ -60,7 +60,7 @@ const ModalPago = ({ cobro, onClose, onSuccess }: ModalPagoProps) => {
       alert(mensaje);
 
       // Abrir factura en nueva pestaña para imprimir
-      window.open(`http://localhost:3000/api/facturas/${facturaId}/imprimir`, '_blank');
+      window.open(getFileUrl(`/api/facturas/${facturaId}/imprimir`), '_blank');
 
       onSuccess();
       onClose();
@@ -583,7 +583,7 @@ export default function CobrosPendientesPage() {
                         </button>
                       ) : (
                         <button
-                          onClick={() => window.open(`http://localhost:3000/api/facturas/${(cobro as any).facturaId}/imprimir`, '_blank')}
+                          onClick={() => window.open(getFileUrl(`/api/facturas/${(cobro as any).facturaId}/imprimir`), '_blank')}
                           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
                         >
                           <FiFileText />

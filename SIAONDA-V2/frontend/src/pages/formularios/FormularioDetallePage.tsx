@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { FiClock } from 'react-icons/fi';
 import { api } from '../../services/api';
+import FormularioHistorialTimeline from '../../components/formularios/FormularioHistorialTimeline';
 
 interface Formulario {
   id: number;
@@ -59,7 +61,9 @@ const FormularioDetallePage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [formulario, setFormulario] = useState<Formulario | null>(null);
+  const [historial, setHistorial] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
   const [error, setError] = useState('');
 
   // Detectar si viene de /aau/formularios o /formularios
@@ -67,6 +71,7 @@ const FormularioDetallePage = () => {
 
   useEffect(() => {
     cargarFormulario();
+    cargarHistorial();
   }, [id]);
 
   const cargarFormulario = async () => {
@@ -78,6 +83,19 @@ const FormularioDetallePage = () => {
       setError(error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const cargarHistorial = async () => {
+    try {
+      setLoadingHistorial(true);
+      const response = await api.get(`/formularios/${id}/historial`);
+      setHistorial(response.data.data || []);
+    } catch (error) {
+      console.error('Error al cargar historial:', error);
+      setHistorial([]);
+    } finally {
+      setLoadingHistorial(false);
     }
   };
 
@@ -383,6 +401,22 @@ const FormularioDetallePage = () => {
           <p className="text-gray-700 whitespace-pre-wrap">{formulario.observaciones}</p>
         </div>
       )}
+
+      {/* Historial del Formulario */}
+      <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-2 mb-6">
+          <FiClock className="text-2xl text-blue-600" />
+          <h2 className="text-xl font-bold text-gray-900">Historial de Cambios</h2>
+        </div>
+
+        {loadingHistorial ? (
+          <div className="flex justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
+          <FormularioHistorialTimeline historial={historial} />
+        )}
+      </div>
     </div>
   );
 };

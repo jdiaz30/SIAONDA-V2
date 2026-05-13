@@ -16,6 +16,7 @@ interface HistorialEntrega {
   cedulaReceptor: string | null;
   esRepresentante: boolean | null;
   rutaDocumentoLegal: string | null;
+  certificadoPdfUrl: string | null;
   usuarioEntrega: {
     nombrecompleto: string;
   };
@@ -72,6 +73,10 @@ export default function HistorialEntregasPage() {
   });
 
   const descargarDocumentoLegal = (ruta: string) => {
+    window.open(`http://localhost:3000${ruta}`, '_blank');
+  };
+
+  const descargarCertificado = (ruta: string) => {
     window.open(`http://localhost:3000${ruta}`, '_blank');
   };
 
@@ -158,6 +163,9 @@ export default function HistorialEntregasPage() {
                     Entregado Por
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Certificado
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Documento
                   </th>
                 </tr>
@@ -230,12 +238,27 @@ export default function HistorialEntregasPage() {
                         {entrega.usuarioEntrega.nombrecompleto}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {entrega.certificadoPdfUrl ? (
+                          <button
+                            onClick={() => descargarCertificado(entrega.certificadoPdfUrl!)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 font-medium"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Ver Certificado
+                          </button>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {entrega.rutaDocumentoLegal ? (
                           <button
                             onClick={() => descargarDocumentoLegal(entrega.rutaDocumentoLegal!)}
                             className="text-blue-600 hover:text-blue-800 font-medium"
                           >
-                            Ver Doc
+                            Ver Doc Legal
                           </button>
                         ) : (
                           <span className="text-gray-400">-</span>

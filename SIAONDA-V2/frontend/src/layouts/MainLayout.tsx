@@ -1,12 +1,67 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { authService } from '../services/authService';
 import { usePermissions } from '../hooks/usePermissions';
+import { FiChevronDown } from 'react-icons/fi';
+
+// Componente NavLink
+const NavLink = ({ to, children }: { to: string; children: React.ReactNode }) => {
+  return (
+    <Link
+      to={to}
+      className="text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200 border-b-2 border-transparent hover:border-blue-600 pb-1"
+    >
+      {children}
+    </Link>
+  );
+};
+
+// Componente NavDropdown
+const NavDropdown = ({
+  label,
+  isOpen,
+  onToggle,
+  items
+}: {
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  items: Array<{ to: string; label: string }>;
+}) => {
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        className="text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200 border-b-2 border-transparent hover:border-blue-600 pb-1 flex items-center gap-1"
+      >
+        {label}
+        <FiChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+          {items.map((item, index) => (
+            <Link
+              key={index}
+              to={item.to}
+              onClick={onToggle}
+              className="block px-4 py-2 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const MainLayout = () => {
   const { usuario, logout } = useAuthStore();
   const { isAdmin } = usePermissions();
   const navigate = useNavigate();
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   const handleLogout = async () => {
     try {
@@ -57,7 +112,7 @@ const MainLayout = () => {
       {/* Navegación */}
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-6 py-3">
+          <div className="flex gap-6 py-3 relative">
             <NavLink to="/">Inicio</NavLink>
 
             {/* Gestión de Usuarios - Solo ADMINISTRADOR */}
@@ -69,14 +124,30 @@ const MainLayout = () => {
             {/* Módulo REGISTRO */}
             <NavLink to="/registro">Registro</NavLink>
 
-            {/* Módulo CAJAS */}
-            <NavLink to="/cajas">Cajas</NavLink>
+            {/* Módulo CAJAS/FINANCIERO - Con Dropdown */}
+            <NavDropdown
+              label="Finanzas"
+              isOpen={openDropdown === 'finanzas'}
+              onToggle={() => setOpenDropdown(openDropdown === 'finanzas' ? null : 'finanzas')}
+              items={[
+                { to: '/cajas', label: 'Cajas' },
+                { to: '/financiero/dashboard', label: 'Dashboard Financiero' }
+              ]}
+            />
 
             {/* Módulo INSPECTORÍA */}
             <NavLink to="/inspectoria">Inspectoría</NavLink>
 
-            {/* Módulo JURÍDICO */}
-            <NavLink to="/juridico">Jurídico</NavLink>
+            {/* Módulo JURÍDICO - Con Dropdown */}
+            <NavDropdown
+              label="Jurídico"
+              isOpen={openDropdown === 'juridico'}
+              onToggle={() => setOpenDropdown(openDropdown === 'juridico' ? null : 'juridico')}
+              items={[
+                { to: '/juridico', label: 'Casos Jurídicos' },
+                { to: '/juridico/actos-contratos', label: 'Actos y Contratos' }
+              ]}
+            />
 
             {/* REPORTES */}
             <NavLink to="/reportes">Reportes</NavLink>
@@ -99,17 +170,6 @@ const MainLayout = () => {
         </div>
       </footer>
     </div>
-  );
-};
-
-const NavLink = ({ to, children }: { to: string; children: React.ReactNode }) => {
-  return (
-    <Link
-      to={to}
-      className="text-gray-700 hover:text-blue-600 font-medium transition-colors duration-200 border-b-2 border-transparent hover:border-blue-600 pb-1"
-    >
-      {children}
-    </Link>
   );
 };
 

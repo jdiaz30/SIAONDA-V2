@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/database';
 import { AppError, asyncHandler } from '../middleware/errorHandler';
+import { autoUpperCase } from '../utils/formatNombres';
 
 // Schemas de validación
 const createClienteSchema = z.object({
@@ -28,6 +29,8 @@ const createClienteSchema = z.object({
   nacionalidadId: z.number().int().positive(),
 
   // Otros
+  rnc: z.string().max(50).optional(),
+  fallecido: z.boolean().optional(),
   fechaFallecimiento: z.string().optional()
 });
 
@@ -139,9 +142,12 @@ export const getCliente = asyncHandler(async (req: Request, res: Response) => {
 export const createCliente = asyncHandler(async (req: Request, res: Response) => {
   const data = createClienteSchema.parse(req.body);
 
+  // Convertir campos de texto a mayúsculas
+  const dataUpperCase = autoUpperCase(data);
+
   // Verificar que no exista con misma identificación
   const existente = await prisma.cliente.findUnique({
-    where: { identificacion: data.identificacion }
+    where: { identificacion: dataUpperCase.identificacion }
   });
 
   if (existente) {
@@ -152,17 +158,32 @@ export const createCliente = asyncHandler(async (req: Request, res: Response) =>
   const codigo = await generateCodigoCliente();
 
   // Construir nombre completo
-  const nombrecompleto = data.apellido
-    ? `${data.nombre} ${data.apellido}`
-    : data.nombre;
+  const nombrecompleto = dataUpperCase.apellido
+    ? `${dataUpperCase.nombre} ${dataUpperCase.apellido}`
+    : dataUpperCase.nombre;
 
   const cliente = await prisma.cliente.create({
     data: {
-      ...data,
-      codigo,
+      identificacion: dataUpperCase.identificacion,
+      tipoIdentificacion: dataUpperCase.tipoIdentificacion,
+      nombre: dataUpperCase.nombre,
+      apellido: dataUpperCase.apellido,
       nombrecompleto,
-      correo: data.correo || null,
-      fechaFallecimiento: data.fechaFallecimiento ? new Date(data.fechaFallecimiento) : null
+      seudonimo: dataUpperCase.seudonimo,
+      genero: dataUpperCase.genero,
+      direccion: dataUpperCase.direccion,
+      municipio: dataUpperCase.municipio,
+      sector: dataUpperCase.sector,
+      provincia: dataUpperCase.provincia,
+      telefono: dataUpperCase.telefono,
+      movil: dataUpperCase.movil,
+      correo: dataUpperCase.correo || null,
+      tipoId: dataUpperCase.tipoId,
+      nacionalidadId: dataUpperCase.nacionalidadId,
+      rnc: dataUpperCase.rnc,
+      fallecido: dataUpperCase.fallecido || false,
+      fechaFallecimiento: dataUpperCase.fechaFallecimiento ? new Date(dataUpperCase.fechaFallecimiento) : null,
+      codigo
     },
     include: {
       tipo: true,

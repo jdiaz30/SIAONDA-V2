@@ -1,4 +1,5 @@
 import { ChangeEvent } from 'react';
+import { detectFormatType, applyFormat } from '../../utils/formatters';
 
 interface TipoCampo {
   id: number;
@@ -37,15 +38,29 @@ const CampoDinamico = ({ campo, valor, onChange, visible = true }: Props) => {
     } else if (type === 'number') {
       onChange(campo.campo, value ? parseFloat(value) : '');
     } else {
+      // Auto-format based on field name/title
+      let formattedValue = value;
+
+      // Only apply formatting to text inputs (not textareas or selects)
+      if (type === 'text' || type === 'tel') {
+        const formatType = detectFormatType(campo.campo) !== 'none'
+          ? detectFormatType(campo.campo)
+          : detectFormatType(campo.titulo);
+
+        if (formatType !== 'none') {
+          formattedValue = applyFormat(value, formatType);
+        }
+      }
+
       // DEBUG: Log cuando se cambia tipo_obra
       if (campo.campo === 'tipo_obra') {
         console.log('🔍 CampoDinamico: Cambio en tipo_obra', {
           campo: campo.campo,
-          valor: value,
+          valor: formattedValue,
           campoId: campo.id
         });
       }
-      onChange(campo.campo, value);
+      onChange(campo.campo, formattedValue);
     }
   };
 
@@ -117,11 +132,20 @@ const CampoDinamico = ({ campo, valor, onChange, visible = true }: Props) => {
         const opcionesStr = campo.opciones || campo.descripcion || '';
         const separador = campo.opciones ? ',' : '|';
         const opciones = opcionesStr ? opcionesStr.split(separador) : [];
+
+        // Valor por defecto para país de origen
+        let valorFinal = valor || '';
+        if (!valorFinal && (campo.campo === 'pais_origen' || campo.titulo.toLowerCase().includes('país de origen'))) {
+          valorFinal = 'República Dominicana';
+          // Establecer el valor por defecto automáticamente
+          setTimeout(() => onChange(campo.campo, 'República Dominicana'), 0);
+        }
+
         return (
           <select
             id={campo.campo}
             name={campo.campo}
-            value={valor || ''}
+            value={valorFinal}
             onChange={handleChange}
             required={campo.requerido}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"

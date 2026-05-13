@@ -18,6 +18,7 @@ interface AutorSeleccionado {
   cliente: Cliente;
   rol: string;
   orden: number;
+  esPrincipal: boolean;
 }
 
 interface Props {
@@ -86,6 +87,7 @@ const BusquedaAutoresStep = ({ autoresIniciales, onContinuar }: Props) => {
       cliente,
       rol: autores.length === 0 ? 'AUTOR_PRINCIPAL' : 'COAUTOR',
       orden: autores.length + 1,
+      esPrincipal: autores.length === 0, // El primero es principal por defecto
     };
 
     setAutores([...autores, nuevoAutor]);
@@ -100,8 +102,23 @@ const BusquedaAutoresStep = ({ autoresIniciales, onContinuar }: Props) => {
     ));
   };
 
+  const marcarComoPrincipal = (autorId: number) => {
+    // Solo uno puede ser principal - quitar principal a los demás
+    setAutores(autores.map(a =>
+      a.id === autorId ? { ...a, esPrincipal: true } : { ...a, esPrincipal: false }
+    ));
+  };
+
   const eliminarAutor = (autorId: number) => {
-    setAutores(autores.filter(a => a.id !== autorId));
+    const autorEliminado = autores.find(a => a.id === autorId);
+    const autoresRestantes = autores.filter(a => a.id !== autorId);
+
+    // Si se elimina el principal y quedan autores, marcar el primero como principal
+    if (autorEliminado?.esPrincipal && autoresRestantes.length > 0) {
+      autoresRestantes[0].esPrincipal = true;
+    }
+
+    setAutores(autoresRestantes);
   };
 
   const handleContinuar = () => {
@@ -233,7 +250,17 @@ const BusquedaAutoresStep = ({ autoresIniciales, onContinuar }: Props) => {
                     <p className="text-sm text-gray-600">Cédula: {autor.cliente.identificacion}</p>
                   </div>
 
-                  <div className="flex-shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col items-center">
+                      <input
+                        type="radio"
+                        checked={autor.esPrincipal}
+                        onChange={() => marcarComoPrincipal(autor.id)}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-xs text-gray-500 mt-1">Principal</span>
+                    </div>
+
                     <select
                       value={autor.rol}
                       onChange={(e) => cambiarRol(autor.id, e.target.value)}

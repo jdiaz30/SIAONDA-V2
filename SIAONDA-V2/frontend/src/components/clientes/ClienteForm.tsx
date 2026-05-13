@@ -62,6 +62,25 @@ const ClienteForm = ({ cliente, onSuccess, onCancel }: Props) => {
     }
   }, [cliente]);
 
+  // Establecer República Dominicana y tipo "Autor" por defecto para nuevos clientes
+  useEffect(() => {
+    if (!cliente && nacionalidades && nacionalidades.length > 0 && formData.nacionalidadId === 0) {
+      // ID 1 = República Dominicana
+      setFormData(prev => ({ ...prev, nacionalidadId: 1 }));
+    }
+  }, [nacionalidades, cliente, formData.nacionalidadId]);
+
+  // Establecer "Autor" como tipo por defecto para nuevos clientes
+  useEffect(() => {
+    if (!cliente && tipos && tipos.length > 0 && formData.tipoId === 0) {
+      // Buscar el ID del tipo "Autor"
+      const tipoAutor = tipos.find(t => t.nombre === 'Autor');
+      if (tipoAutor) {
+        setFormData(prev => ({ ...prev, tipoId: tipoAutor.id }));
+      }
+    }
+  }, [tipos, cliente, formData.tipoId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -76,9 +95,52 @@ const ClienteForm = ({ cliente, onSuccess, onCancel }: Props) => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
+
+    // Aplicar formateo automático según el campo
+    let formattedValue = value;
+
+    // Formateo de identificación (cédula/RNC)
+    if (name === 'identificacion') {
+      // Auto-detectar si es cédula (11 dígitos) o RNC (9 dígitos)
+      const digits = value.replace(/\D/g, '');
+      if (digits.length <= 9) {
+        // Probablemente RNC
+        formattedValue = digits.slice(0, 9);
+        if (formattedValue.length > 8) {
+          formattedValue = `${formattedValue.slice(0, 3)}-${formattedValue.slice(3, 8)}-${formattedValue.slice(8)}`;
+        } else if (formattedValue.length > 3) {
+          formattedValue = `${formattedValue.slice(0, 3)}-${formattedValue.slice(3)}`;
+        }
+      } else {
+        // Probablemente cédula
+        formattedValue = digits.slice(0, 11);
+        if (formattedValue.length > 10) {
+          formattedValue = `${formattedValue.slice(0, 3)}-${formattedValue.slice(3, 10)}-${formattedValue.slice(10)}`;
+        } else if (formattedValue.length > 3) {
+          formattedValue = `${formattedValue.slice(0, 3)}-${formattedValue.slice(3)}`;
+        }
+      }
+    }
+
+    // Formateo de teléfono
+    if (name === 'telefono') {
+      const digits = value.replace(/\D/g, '');
+      formattedValue = digits.slice(0, 10);
+      if (formattedValue.length > 6) {
+        formattedValue = `${formattedValue.slice(0, 3)}-${formattedValue.slice(3, 6)}-${formattedValue.slice(6)}`;
+      } else if (formattedValue.length > 3) {
+        formattedValue = `${formattedValue.slice(0, 3)}-${formattedValue.slice(3)}`;
+      }
+    }
+
+    // Convertir a mayúsculas campos de texto
+    if (name === 'nombre' || name === 'apellido' || name === 'direccion') {
+      formattedValue = value.toUpperCase();
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'tipoId' || name === 'nacionalidadId' ? parseInt(value) : value
+      [name]: name === 'tipoId' || name === 'nacionalidadId' ? parseInt(value) : formattedValue
     }));
   };
 

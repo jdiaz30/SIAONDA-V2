@@ -127,9 +127,20 @@ const generarTextoObra = (productos: CertificadoData['formulario']['productos'])
 
   const producto = productos[0];
   const categoria = producto.producto.categoria;
-  const tipoObra = getTextoTipoObra(categoria);
 
-  // Buscar título de la obra
+  // Detectar si es una producción (código termina en -P)
+  const esProduccion = productos.length > 1;
+
+  // Para producciones, extraer el tipo de obra del nombre del producto
+  let tipoObra = getTextoTipoObra(categoria);
+  if (esProduccion) {
+    // El nombre del producto es como "Dibujos (6-15)" o "Pinturas (6-15)"
+    // Extraer solo la parte antes del paréntesis y convertir a minúsculas
+    const nombreProducto = producto.producto.nombre.replace(/\s*\(.*\)/, '').toLowerCase();
+    tipoObra = nombreProducto;
+  }
+
+  // Buscar título de la obra/producción
   const campoTitulo = producto.campos.find(c =>
     c.campo.titulo.toLowerCase().includes('titulo') ||
     c.campo.titulo.toLowerCase().includes('título') ||
@@ -138,10 +149,11 @@ const generarTextoObra = (productos: CertificadoData['formulario']['productos'])
 
   const titulo = campoTitulo ? campoTitulo.valor : producto.producto.nombre;
 
+  // Usar el mismo formato oficial para todas las obras
   let texto = `la ${tipoObra} titulada: <strong>"${titulo.toUpperCase()}"</strong>`;
 
-  // Si hay sub-obras (obras madre con productos hijos)
-  if (productos.length > 1) {
+  // Si hay sub-obras (producciones), agregar la lista al final
+  if (esProduccion) {
     texto += ', la cual contiene las siguientes obras: ';
     const subObras = productos.slice(1).map(p => {
       const subTitulo = p.campos.find(c =>

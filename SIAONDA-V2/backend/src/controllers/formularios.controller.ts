@@ -242,6 +242,47 @@ export const getFormulario = asyncHandler(async (req: Request, res: Response) =>
     throw new AppError('Formulario no encontrado', 404);
   }
 
+  // Si es un formulario padre de producción, agregar los productos de los formularios hijos
+  if (formulario.esProduccion) {
+    const formulariosHijos = await prisma.formulario.findMany({
+      where: { produccionPadreId: formulario.id },
+      include: {
+        productos: {
+          include: {
+            producto: {
+              include: {
+                costos: {
+                  where: {
+                    OR: [
+                      { fechaFinal: null },
+                      { fechaFinal: { gte: new Date() } }
+                    ],
+                    fechaInicio: { lte: new Date() }
+                  },
+                  orderBy: { cantidadMin: 'asc' }
+                }
+              }
+            },
+            campos: {
+              include: {
+                campo: {
+                  include: {
+                    tipo: true
+                  }
+                }
+              }
+            },
+            archivos: true
+          }
+        }
+      }
+    });
+
+    // Reemplazar los productos del padre con los de los hijos (el padre solo tiene un producto vacío)
+    const productosHijos = formulariosHijos.flatMap(hijo => hijo.productos);
+    formulario.productos = productosHijos;
+  }
+
   res.json(formulario);
 });
 
@@ -1049,7 +1090,31 @@ export const createFormularioObrasMultiple = asyncHandler(async (req: AuthReques
  */
 export const corregirFormulario = asyncHandler(async (req: AuthRequest, res: Response) => {
   const id = parseInt(req.params.id);
-  const { campos } = req.body; // Array de { id: campoId, valor: string }
+
+  console.log('🌐 Content-Type:', req.headers['content-type']);
+  console.log('📦 req.body keys:', Object.keys(req.body));
+  console.log('📎 req.files:', req.files);
+
+  // Si viene FormData (con archivos), campos y clientes vienen como string JSON
+  let campos = req.body.campos;
+  let clientes = req.body.clientes;
+
+  if (typeof campos === 'string') {
+    try {
+      campos = JSON.parse(campos);
+    } catch (e) {
+      throw new AppError('Formato de campos inválido', 400);
+    }
+  }
+
+  if (typeof clientes === 'string') {
+    try {
+      clientes = JSON.parse(clientes);
+    } catch (e) {
+      // Si no se envían clientes, no es error
+      clientes = null;
+    }
+  }
 
   if (!req.usuario) {
     throw new AppError('No autenticado', 401);
@@ -1080,9 +1145,60 @@ export const corregirFormulario = asyncHandler(async (req: AuthRequest, res: Res
     throw new AppError('Solo se pueden corregir formularios en estado DEVUELTO', 400);
   }
 
+  // Procesar archivos si vienen (req.files desde multer)
+  console.log('🔍 Archivos recibidos:', req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 'ninguno');
+  const archivosSubidos: any = {};
+  if (req.files && Array.isArray(req.files)) {
+    console.log('📁 Procesando archivos:', req.files.map(f => f.fieldname));
+    for (const file of req.files) {
+      // Los archivos vienen con fieldname como 'archivos_123' donde 123 es el productoId
+      const match = file.fieldname.match(/^archivos_(\d+)$/);
+      if (match) {
+        const productoId = parseInt(match[1]);
+        if (!archivosSubidos[productoId]) {
+          archivosSubidos[productoId] = [];
+        }
+        archivosSubidos[productoId].push(file);
+        console.log(`✅ Archivo ${file.originalname} asociado a producto ${productoId}`);
+      }
+    }
+  }
+  console.log('📊 Total archivos agrupados:', Object.keys(archivosSubidos).length, 'productos con archivos');
+
   // Actualizar campos en transacción
   await prisma.$transaction(async (tx) => {
-    // 1. Actualizar cada campo
+    // 1. Actualizar clientes/autores si se proporcionaron
+    if (clientes && Array.isArray(clientes)) {
+      // Validar que haya al menos un autor principal
+      const tieneAutorPrincipal = clientes.some((c: any) => c.tipoRelacion === 'AUTOR_PRINCIPAL');
+      if (!tieneAutorPrincipal) {
+        throw new AppError('Debe designar al menos un Autor Principal', 400);
+      }
+
+      // Eliminar todos los clientes actuales del formulario
+      await tx.formularioCliente.deleteMany({
+        where: { formularioId: id }
+      });
+
+      // Crear los nuevos clientes
+      for (const cliente of clientes) {
+        if (!cliente.clienteId || !cliente.tipoRelacion) {
+          throw new AppError('Datos de cliente incompletos', 400);
+        }
+
+        await tx.formularioCliente.create({
+          data: {
+            formularioId: id,
+            clienteId: cliente.clienteId,
+            tipoRelacion: cliente.tipoRelacion
+          }
+        });
+      }
+
+      console.log(`✅ Actualizado ${clientes.length} cliente(s) del formulario`);
+    }
+
+    // 2. Actualizar cada campo
     for (const campo of campos) {
       if (!campo.id || campo.valor === undefined) {
         continue;
@@ -1094,7 +1210,34 @@ export const corregirFormulario = asyncHandler(async (req: AuthRequest, res: Res
       });
     }
 
-    // 2. Cambiar estado del formulario a PAGADO para que vuelva al flujo de Registro
+    // 3. Guardar archivos nuevos si hay
+    console.log('💾 Guardando archivos en BD...');
+    for (const [productoIdStr, files] of Object.entries(archivosSubidos)) {
+      const productoId = parseInt(productoIdStr);
+      console.log(`💾 Producto ${productoId}: ${(files as any[]).length} archivos`);
+      for (const file of files as any[]) {
+        // Convertir ruta absoluta a ruta relativa desde /uploads
+        const rutaRelativa = file.path.includes('uploads')
+          ? '/' + file.path.substring(file.path.indexOf('uploads'))
+          : file.path;
+
+        const archivoCreado = await tx.formularioArchivo.create({
+          data: {
+            formularioId: id,
+            formularioProductoId: productoId,
+            nombreOriginal: file.originalname,
+            nombreSistema: file.filename,
+            ruta: rutaRelativa,
+            tamano: file.size,
+            mimeType: file.mimetype
+          }
+        });
+        console.log(`✅ Archivo guardado en BD: ID ${archivoCreado.id}, ruta: ${rutaRelativa}`);
+      }
+    }
+    console.log('✅ Todos los archivos guardados en BD');
+
+    // 4. Cambiar estado del formulario a PAGADO para que vuelva al flujo de Registro
     const estadoPagado = await tx.formularioEstado.findFirst({
       where: { nombre: 'PAGADO' }
     });
@@ -1103,7 +1246,7 @@ export const corregirFormulario = asyncHandler(async (req: AuthRequest, res: Res
       throw new AppError('Estado PAGADO no encontrado', 500);
     }
 
-    // 3. Actualizar formulario: cambiar estado y limpiar datos de devolución
+    // 5. Actualizar formulario padre: cambiar estado y limpiar datos de devolución
     await tx.formulario.update({
       where: { id },
       data: {
@@ -1113,32 +1256,47 @@ export const corregirFormulario = asyncHandler(async (req: AuthRequest, res: Res
       }
     });
 
-    // 4. Buscar el Registro asociado a este formulario y cambiar su estado a PENDIENTE_ASENTAMIENTO
-    const registroDevuelto = await tx.registro.findFirst({
-      where: {
-        formularioProducto: {
-          formularioId: id
+    // 6. Si es producción, actualizar también los formularios hijos
+    if (formulario.esProduccion) {
+      await tx.formulario.updateMany({
+        where: { produccionPadreId: id },
+        data: {
+          estadoId: estadoPagado.id,
+          mensajeDevolucion: null,
+          fechaDevolucion: null
         }
-      },
-      include: {
-        estado: true
-      }
+      });
+    }
+
+    // 7. Cambiar estado de TODOS los registros asociados (padre e hijos) a PENDIENTE_ASENTAMIENTO
+    const estadoPendienteAsentamiento = await tx.registroEstado.findFirst({
+      where: { nombre: 'PENDIENTE_ASENTAMIENTO' }
     });
 
-    if (registroDevuelto && registroDevuelto.estado.nombre === 'DEVUELTO_AAU') {
-      const estadoPendienteAsentamiento = await tx.registroEstado.findFirst({
-        where: { nombre: 'PENDIENTE_ASENTAMIENTO' }
-      });
+    if (estadoPendienteAsentamiento) {
+      // Obtener IDs de todos los formularios (padre + hijos si es producción)
+      const formularioIds = formulario.esProduccion
+        ? [id, ...(await tx.formulario.findMany({
+            where: { produccionPadreId: id },
+            select: { id: true }
+          })).map(f => f.id)]
+        : [id];
 
-      if (estadoPendienteAsentamiento) {
-        await tx.registro.update({
-          where: { id: registroDevuelto.id },
-          data: {
-            estadoId: estadoPendienteAsentamiento.id,
-            observaciones: `Formulario corregido por AAU. ${registroDevuelto.observaciones || ''}`
+      // Actualizar todos los registros de estos formularios
+      await tx.registro.updateMany({
+        where: {
+          formularioProducto: {
+            formularioId: { in: formularioIds }
+          },
+          estado: {
+            nombre: 'DEVUELTO_AAU'
           }
-        });
-      }
+        },
+        data: {
+          estadoId: estadoPendienteAsentamiento.id,
+          observaciones: 'Formulario corregido por AAU y reenviado a Registro'
+        }
+      });
     }
   });
 

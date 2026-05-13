@@ -18,4 +18,8 @@ router.put('/casos/:id/cerrar', juridicoController.cerrarCasoJuridico);
 // Estados
 router.get('/estados', juridicoController.obtenerEstados);
 
+// Actos y Contratos
+router.get('/actos-contratos', juridicoController.getActosContratos);
+router.get('/actos-contratos/:id', juridicoController.getActoContratoDetalle);
+
 export default router;

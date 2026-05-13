@@ -16,12 +16,15 @@ import {
   getCertificadosListosAAU,
   generarCertificado,
   subirCertificadoFirmado,
+  subirMultiplesCertificados,
   enviarAAAU,
   Registro
 } from '../../services/registroService';
 import DetalleFormularioModal from '../../components/registro/DetalleFormularioModal';
+import SubirCertificadosModal from '../../components/registro/SubirCertificadosModal';
 import { usePermissions } from '../../hooks/usePermissions';
 import NoAccess from '../../components/common/NoAccess';
+import { getFileUrl } from '../../services/api';
 
 type Tab = 'generar' | 'firmar';
 
@@ -58,6 +61,7 @@ const CertificadosGestionPage = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [registroParaUpload, setRegistroParaUpload] = useState<number | null>(null);
   const [registroDetalle, setRegistroDetalle] = useState<number | null>(null);
+  const [mostrarModalMultiple, setMostrarModalMultiple] = useState(false);
 
   // Paginación para tabla de generar
   const [paginaGenerar, setPaginaGenerar] = useState(1);
@@ -111,7 +115,7 @@ const CertificadosGestionPage = () => {
       alert('Certificado generado exitosamente');
 
       // Abrir el PDF en nueva ventana
-      window.open(`http://localhost:3000${resultado.certificadoUrl}`, '_blank');
+      window.open(getFileUrl(resultado.certificadoUrl), '_blank');
 
       cargarDatos();
     } catch (error) {
@@ -178,14 +182,22 @@ const CertificadosGestionPage = () => {
       return;
     }
 
-    if (!confirm(`¿Enviar ${seleccionados.length} certificado(s) a AAU para entrega?`)) {
+    // Contar cuántos certificados únicos (agrupando producciones)
+    const certificadosUnicos = certificadosParaEnviar.filter((r: any) => {
+      if (r.esProduccion && r.idsProduccion) {
+        return r.idsProduccion.some((id: number) => seleccionados.includes(id));
+      }
+      return seleccionados.includes(r.id);
+    });
+
+    if (!confirm(`¿Enviar ${certificadosUnicos.length} certificado(s) a AAU para entrega?`)) {
       return;
     }
 
     try {
       setEnviando(true);
-      const cantidad = await enviarAAAU(seleccionados);
-      alert(`${cantidad} certificado(s) enviado(s) a AAU exitosamente`);
+      await enviarAAAU(seleccionados);
+      alert(`${certificadosUnicos.length} certificado(s) enviado(s) a AAU exitosamente`);
       setSeleccionados([]);
       cargarDatos();
     } catch (error) {
@@ -193,6 +205,32 @@ const CertificadosGestionPage = () => {
       alert('Error al enviar certificados a AAU');
     } finally {
       setEnviando(false);
+    }
+  };
+
+  const handleSubirMultiples = async (uploads: Array<{ registroId: number; file: File }>) => {
+    try {
+      const resultado = await subirMultiplesCertificados(uploads);
+
+      if (resultado.fallidos > 0) {
+        const errores = resultado.resultados
+          .filter(r => !r.success)
+          .map(r => `Registro ${r.registroId}: ${r.error}`)
+          .join('\n');
+
+        alert(
+          `${resultado.exitosos} certificado(s) subido(s) exitosamente.\n\n` +
+          `${resultado.fallidos} fallido(s):\n${errores}`
+        );
+      } else {
+        alert(`${resultado.exitosos} certificado(s) subido(s) exitosamente`);
+      }
+
+      await cargarDatos();
+    } catch (error) {
+      console.error('Error al subir certificados:', error);
+      alert('Error al subir los certificados');
+      throw error;
     }
   };
 
@@ -209,6 +247,14 @@ const CertificadosGestionPage = () => {
   const certificadosParaEnviar = certificadosListos.filter(
     r => r.estado.nombre === 'CERTIFICADO_FIRMADO'
   );
+
+  // Contar certificados únicos seleccionados (agrupando producciones)
+  const certificadosUnicosSeleccionados = certificadosParaEnviar.filter((r: any) => {
+    if (r.esProduccion && r.idsProduccion) {
+      return r.idsProduccion.some((id: number) => seleccionados.includes(id));
+    }
+    return seleccionados.includes(r.id);
+  }).length;
 
   // Paginación para tabla de firma
   const totalPaginasFirmar = Math.ceil(certificadosParaSubir.length / itemsPorPaginaFirmar);
@@ -337,7 +383,9 @@ const CertificadosGestionPage = () => {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                            {registro.tituloObra}
+                            {registro.esProduccion
+                              ? (registro.tituloProduccion || registro.tituloObra)
+                              : registro.tituloObra}
                             {registro.esProduccion && (
                               <span className="ml-2 text-xs text-purple-600 font-semibold">
                                 (PRODUCCIÓN)
@@ -431,12 +479,25 @@ const CertificadosGestionPage = () => {
               {/* Sección 1: Certificados Pendientes de Firma */}
               <div className="bg-white rounded-lg shadow-sm border border-gray-200">
                 <div className="p-6 border-b border-gray-200">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    Pendientes de Firma
-                  </h2>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Total: {certificadosParaSubir.length}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900">
+                        Pendientes de Firma
+                      </h2>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Total: {certificadosParaSubir.length}
+                      </p>
+                    </div>
+                    {certificadosParaSubir.length > 0 && (
+                      <button
+                        onClick={() => setMostrarModalMultiple(true)}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+                      >
+                        <FiUpload />
+                        Subir Múltiples
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -476,7 +537,9 @@ const CertificadosGestionPage = () => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                              {registro.tituloObra}
+                              {registro.esProduccion
+                                ? (registro.tituloProduccion || registro.tituloObra)
+                                : registro.tituloObra}
                               {registro.esProduccion && (
                                 <span className="ml-2 text-xs text-purple-600 font-semibold">
                                   (PRODUCCIÓN)
@@ -487,7 +550,7 @@ const CertificadosGestionPage = () => {
                           <td className="px-6 py-4 whitespace-nowrap">
                             {registro.certificadoGenerado && (
                               <a
-                                href={`http://localhost:3000${registro.certificadoGenerado}`}
+                                href={getFileUrl(registro.certificadoGenerado)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-600 hover:text-blue-800 flex items-center gap-2"
@@ -520,7 +583,7 @@ const CertificadosGestionPage = () => {
                                 ) : (
                                   <>
                                     <FiUpload />
-                                    {registro.esProduccion ? `Subir (${registro.cantidadObras} obras)` : 'Subir Firmado'}
+                                    Subir Firmado
                                   </>
                                 )}
                               </button>
@@ -589,14 +652,14 @@ const CertificadosGestionPage = () => {
                         ) : (
                           <>
                             <FiSend />
-                            Enviar ({seleccionados.length})
+                            Enviar ({certificadosUnicosSeleccionados})
                           </>
                         )}
                       </button>
                     )}
                   </div>
                   <p className="text-sm text-gray-600">
-                    Seleccionados: {seleccionados.length} de {certificadosParaEnviar.length}
+                    Seleccionados: {certificadosUnicosSeleccionados} de {certificadosParaEnviar.length}
                   </p>
                 </div>
 
@@ -673,7 +736,9 @@ const CertificadosGestionPage = () => {
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm font-medium text-gray-900 max-w-xs truncate">
-                              {registro.tituloObra}
+                              {registro.esProduccion
+                                ? (registro.tituloProduccion || registro.tituloObra)
+                                : registro.tituloObra}
                               {registro.esProduccion && (
                                 <span className="ml-2 text-xs text-purple-600 font-semibold">
                                   (PRODUCCIÓN)
@@ -689,7 +754,7 @@ const CertificadosGestionPage = () => {
                           <td className="px-6 py-4 whitespace-nowrap">
                             {registro.certificadoFirmado && (
                               <a
-                                href={`http://localhost:3000${registro.certificadoFirmado}`}
+                                href={getFileUrl(registro.certificadoFirmado)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-green-600 hover:text-green-800 flex items-center gap-2"
@@ -762,6 +827,15 @@ const CertificadosGestionPage = () => {
           onClose={() => setRegistroDetalle(null)}
           onDevuelto={cargarDatos}
           mostrarBotonDevolver={true}
+        />
+      )}
+
+      {/* Modal de Subida Múltiple */}
+      {mostrarModalMultiple && (
+        <SubirCertificadosModal
+          registros={certificadosParaSubir}
+          onClose={() => setMostrarModalMultiple(false)}
+          onSubir={handleSubirMultiples}
         />
       )}
     </div>
